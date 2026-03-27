@@ -1,15 +1,9 @@
-from dataclasses import dataclass
 from pathlib import Path
 import tempfile
 import subprocess
 import shutil
+from models import ExecutionArtifacts
 
-@dataclass(slots=True)
-class ExecutionArtifacts:
-    work_dir: Path
-    solution_file: Path
-    test_file: Path
-    junit_file: Path
 
 class TempWorkspace:
     def __init__(self, keep_artifacts: bool = False) -> None:

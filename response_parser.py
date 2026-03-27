@@ -1,11 +1,4 @@
-from dataclasses import dataclass
-
-
-@dataclass(slots=True)
-class GeneratedArtifacts:
-    implementation_code: str
-    tests_code: str
-    raw_response: str
+from models import GeneratedArtifacts
 
 
 class ResponseParseError(ValueError):
