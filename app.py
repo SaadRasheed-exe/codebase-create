@@ -19,6 +19,9 @@ def _print_progress(report) -> None:
             f"errors={execution.errors} "
             f"category={execution.category}"
         )
+    print(f'Final result: success={report.success}')
+    if not report.success:
+        print(f"Failure reason: {report.failure_summary}")
 
 def main():
 

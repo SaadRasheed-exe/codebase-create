@@ -1,4 +1,5 @@
 import time
+from collections import Counter
 from config import AgentConfig
 from executor import TempWorkspace, run_pytest
 from llmbackends import OllamaBackend
@@ -8,9 +9,15 @@ from response_parser import ResponseParseError, parse_model_response
 from test_results import parse_test_result
 
 
+def _dominant_error(execution: TestExecutionResult) -> str:
+    if execution.failure_messages:
+        return execution.failure_messages[0][:200]
+    return execution.category
+
 
 def run_agent(user_prompt: str, backend: OllamaBackend, config: AgentConfig) -> FinalReport:
     records: list[IterationRecord] = []
+    repeated_error_tracker: Counter[str] = Counter()
 
     for attempt in range(1, config.max_iterations + 1):
         start = time.perf_counter()
@@ -101,6 +108,18 @@ def run_agent(user_prompt: str, backend: OllamaBackend, config: AgentConfig) -> 
                 max_iterations=config.max_iterations,
                 failure_category="none",
                 failure_summary="All tests passed",
+                records=records,
+            )
+        
+        key = _dominant_error(execution)
+        repeated_error_tracker[key] += 1
+        if repeated_error_tracker[key] >= 3:
+            return FinalReport(
+                success=False,
+                attempts_used=attempt,
+                max_iterations=config.max_iterations,
+                failure_category="stuck_loop",
+                failure_summary=f"Repeated failure pattern detected: {key}",
                 records=records,
             )
     
