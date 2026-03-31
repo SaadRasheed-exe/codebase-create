@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal
 
@@ -42,6 +42,16 @@ class TestExecutionResult:
 
 @dataclass(slots=True)
 class IterationRecord:
+    attempt: int
     artifacts: GeneratedArtifacts
     execution: TestExecutionResult | None = None
     duration_sec: float = 0.0
+
+@dataclass(slots=True)
+class FinalReport:
+    success: bool
+    attempts_used: int
+    max_iterations: int
+    failure_category: FailureCategory
+    failure_summary: str
+    records: list[IterationRecord] = field(default_factory=list)
