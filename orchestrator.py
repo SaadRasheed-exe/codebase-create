@@ -15,6 +15,36 @@ def _dominant_error(execution: TestExecutionResult) -> str:
     return execution.category
 
 
+def _compute_temperature(attempt: int, records: list[IterationRecord], config: AgentConfig) -> float:
+    base = config.generation_temperature
+    ramp_per_attempt = 0.06
+    temp = base + ramp_per_attempt * max(attempt - 1, 0)
+
+    if records:
+        last = records[-1].execution
+        if last is not None:
+            if last.category in ("malformed_model_output", "syntax_error"):
+                temp -= 0.08
+            elif last.category in ("test_failure", "runtime_error"):
+                temp += 0.05
+            elif last.category == "timeout":
+                temp += 0.03
+
+    # if last 2 attempts failed with same category + first message, boost diversity.
+    if len(records) >= 2:
+        def fingerprint(r: IterationRecord) -> tuple[str, str]:
+            ex = r.execution
+            if ex is None:
+                return ("none", "")
+            first_msg = ex.failure_messages[0] if ex.failure_messages else ""
+            return (ex.category, first_msg[:160])
+
+        if fingerprint(records[-1]) == fingerprint(records[-2]):
+            temp += 0.10
+
+    return max(0.08, min(temp, 0.50))
+
+
 def run_agent(user_prompt: str, backend: OllamaBackend, config: AgentConfig) -> FinalReport:
     records: list[IterationRecord] = []
     repeated_error_tracker: Counter[str] = Counter()
@@ -28,11 +58,12 @@ def run_agent(user_prompt: str, backend: OllamaBackend, config: AgentConfig) -> 
             else build_repair_prompt(user_prompt, records[-1])
         )
 
+        attempt_temperature = _compute_temperature(attempt, records, config)
         try:
             raw = backend.generate(
                 system_prompt=SYSTEM_PROMPT,
                 user_prompt=model_prompt,
-                temperature=config.generation_temperature,
+                temperature=attempt_temperature,
             )
             artifacts = parse_model_response(raw)
         except ResponseParseError as ex:
@@ -53,6 +84,7 @@ def run_agent(user_prompt: str, backend: OllamaBackend, config: AgentConfig) -> 
                 artifacts=artifacts,
                 execution=execution,
                 duration_sec=time.perf_counter() - start,
+                temperature=attempt_temperature,
             )
             records.append(record)
             continue
@@ -98,6 +130,7 @@ def run_agent(user_prompt: str, backend: OllamaBackend, config: AgentConfig) -> 
             artifacts=artifacts,
             execution=execution,
             duration_sec=time.perf_counter() - start,
+            temperature=attempt_temperature,
         )
         records.append(record)
     

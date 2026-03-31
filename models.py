@@ -46,6 +46,7 @@ class IterationRecord:
     artifacts: GeneratedArtifacts
     execution: TestExecutionResult | None = None
     duration_sec: float = 0.0
+    temperature: float = 0.0
 
 @dataclass(slots=True)
 class FinalReport:
