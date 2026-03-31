@@ -5,12 +5,15 @@ class OllamaBackend:
         self.client = Client()
         self.model_name = model_name
 
-    def generate(self, system_prompt: str, user_prompt: str) -> str:
+    def generate(self, system_prompt: str, user_prompt: str, temperature: float = 0.1) -> str:
         response = self.client.chat(
             model=self.model_name,
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt},
             ],
+            options={
+                "temperature": temperature
+            }
         )
         return response.message.content

@@ -25,6 +25,7 @@ def run_agent(user_prompt: str, backend: OllamaBackend, config: AgentConfig) -> 
             raw = backend.generate(
                 system_prompt=SYSTEM_PROMPT,
                 user_prompt=model_prompt,
+                temperature=config.generation_temperature,
             )
             artifacts = parse_model_response(raw)
         except ResponseParseError as ex:
