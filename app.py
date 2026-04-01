@@ -13,6 +13,13 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--max-iterations", type=int, default=None)
     parser.add_argument("--timeout", type=int, default=None, help="Test run timeout in seconds")
     parser.add_argument("--keep-artifacts", action="store_true")
+    parser.add_argument("--sandbox", choices=["subprocess", "docker"], default=None)
+    parser.add_argument("--docker-image", default=None)
+    parser.add_argument("--docker-memory", default=None, help="Docker memory limit, e.g. 512m")
+    parser.add_argument("--docker-cpus", type=float, default=None, help="Docker CPU limit, e.g. 1.0")
+    parser.add_argument("--docker-network-disabled", dest="docker_network_disabled", action="store_true")
+    parser.add_argument("--docker-network-enabled", dest="docker_network_disabled", action="store_false")
+    parser.set_defaults(docker_network_disabled=None)
     parser.add_argument("--json", action="store_true", help="Print final report as JSON")
     return parser
 
@@ -47,6 +54,16 @@ def main():
         config.test_timeout_sec = args.timeout
     if args.keep_artifacts:
         config.keep_artifacts = True
+    if args.sandbox:
+        config.sandbox = args.sandbox
+    if args.docker_image:
+        config.docker_image = args.docker_image
+    if args.docker_memory:
+        config.docker_memory_limit = args.docker_memory
+    if args.docker_cpus is not None:
+        config.docker_cpus = args.docker_cpus
+    if args.docker_network_disabled is not None:
+        config.docker_network_disabled = args.docker_network_disabled
 
     backend = OllamaBackend(model_name=config.model)
     report = run_agent(args.prompt, backend, config)

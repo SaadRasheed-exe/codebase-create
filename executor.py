@@ -2,7 +2,9 @@ from pathlib import Path
 import tempfile
 import subprocess
 import shutil
+from config import AgentConfig
 from models import ExecutionArtifacts
+from sandboxes import get_sandbox_runner
 
 
 class TempWorkspace:
@@ -32,7 +34,12 @@ class TempWorkspace:
             shutil.rmtree(self._tmp_dir, ignore_errors=True)
 
 
-def run_pytest(work_dir: Path, junit_file: Path, timeout_sec: int) -> subprocess.CompletedProcess[str] | None:
+def run_pytest(
+    work_dir: Path,
+    junit_file: Path,
+    timeout_sec: int,
+    config: AgentConfig,
+) -> subprocess.CompletedProcess[str] | None:
     cmd = [
         "python",
         "-m",
@@ -41,14 +48,5 @@ def run_pytest(work_dir: Path, junit_file: Path, timeout_sec: int) -> subprocess
         "--tb=short",
         f"--junitxml={junit_file.name}",
     ]
-    try:
-        return subprocess.run(
-            cmd,
-            cwd=work_dir,
-            capture_output=True,
-            text=True,
-            timeout=timeout_sec,
-            check=False,
-        )
-    except subprocess.TimeoutExpired:
-        return None
+    runner = get_sandbox_runner(config)
+    return runner.run(cmd=cmd, work_dir=work_dir, timeout_sec=timeout_sec)

@@ -35,7 +35,13 @@ def _extract_messages_from_xml(junit_file: Path) -> tuple[int, int, int, list[st
     return passed, failures, errors, messages
 
 
-def parse_test_result(stdout: str, stderr: str, junit_file: Path, timed_out: bool) -> TestExecutionResult:
+def parse_test_result(
+    stdout: str,
+    stderr: str,
+    junit_file: Path,
+    timed_out: bool,
+    exit_code: int | None = None,
+) -> TestExecutionResult:
     if timed_out:
         return TestExecutionResult(
             success=False,
@@ -57,6 +63,8 @@ def parse_test_result(stdout: str, stderr: str, junit_file: Path, timed_out: boo
             messages.append(text[:2000])
 
     text_blob = f"{stdout}\n{stderr}"
+    lower_text = text_blob.lower()
+    total_tests = passed + failed + errors
 
     category = "none"
     if failed > 0:
@@ -73,8 +81,26 @@ def parse_test_result(stdout: str, stderr: str, junit_file: Path, timed_out: boo
     elif "NameError" in text_blob:
         category = "runtime_error"
 
+    if exit_code is not None and exit_code != 0 and failed == 0 and errors == 0:
+        category = "infrastructure_error"
+        errors = 1
+        if not messages:
+            messages.append("Pytest exited with a non-zero status before producing structured results.")
+
+    if total_tests == 0:
+        if "no tests ran" in lower_text or "collected 0 items" in lower_text:
+            category = "test_failure"
+            failed = max(failed, 1)
+            if not messages:
+                messages.append("No tests were collected or executed.")
+        elif not timed_out:
+            category = "infrastructure_error"
+            errors = max(errors, 1)
+            if not messages:
+                messages.append("No JUnit test results were produced.")
+
     return TestExecutionResult(
-        success=(failed == 0 and errors == 0 and category == "none"),
+        success=(failed == 0 and errors == 0 and total_tests > 0 and category == "none"),
         passed=passed,
         failed=failed,
         errors=errors,

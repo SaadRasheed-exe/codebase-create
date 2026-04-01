@@ -100,6 +100,7 @@ def run_agent(user_prompt: str, backend: OllamaBackend, config: AgentConfig) -> 
                 work_dir=written.work_dir,
                 junit_file=written.junit_file,
                 timeout_sec=config.test_timeout_sec,
+                config=config,
             )
             if completed is None:
                 execution = parse_test_result("", "", written.junit_file, timed_out=True)
@@ -109,6 +110,7 @@ def run_agent(user_prompt: str, backend: OllamaBackend, config: AgentConfig) -> 
                     completed.stderr,
                     written.junit_file,
                     timed_out=False,
+                    exit_code=completed.returncode,
                 )
         except Exception as ex:  # pragma: no cover
             execution = TestExecutionResult(
