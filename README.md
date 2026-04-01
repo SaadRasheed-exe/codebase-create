@@ -11,6 +11,7 @@ The system addresses the challenge of bridging the gap between natural language 
 - **Iterative Refinement**: Up to N attempts to fix failing code, with each iteration learning from previous test failures
 - **Adaptive Temperature Strategy**: Dynamically adjusts LLM sampling temperature to balance precision and exploration across attempts
 - **Automated Testing**: Runs pytest with structured XML output parsing for clear failure diagnosis
+- **Pluggable Sandboxing**: Execute tests with local subprocesses or Docker containers
 - **Robust Parsing**: Handles malformed model outputs gracefully with fallback mechanisms
 - **Configurable Backends**: Built on Ollama for flexible model swapping
 - **Detailed Reporting**: Full execution trace including artifacts, timings, and failure categories
@@ -149,7 +150,21 @@ export AGENT_TEST_TIMEOUT="15"
 export AGENT_MAX_ITERATIONS="8"
 export AGENT_KEEP_ARTIFACTS="false"
 export AGENT_GENERATION_TEMPERATURE="0.1"
+export AGENT_SANDBOX="docker"          # subprocess | docker
+export AGENT_DOCKER_IMAGE="python:3.11-slim"
+export AGENT_DOCKER_NETWORK_DISABLED="true"
+export AGENT_DOCKER_MEMORY="512m"
+export AGENT_DOCKER_CPUS="1.0"
 ```
+
+Docker mode examples:
+
+```bash
+python app.py "Build a function..." --sandbox docker
+python app.py "Build a function..." --sandbox docker --docker-memory 1g --docker-cpus 1.5
+```
+
+Note: If the configured Docker image does not include `pytest`, the runner automatically builds a derived image with `pytest` installed and then executes tests in that derived image.
 
 ## Design Patterns & Decisions
 
