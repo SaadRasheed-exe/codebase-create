@@ -2,14 +2,15 @@ import json
 import argparse
 
 from config import AgentConfig
-from llmbackends import OllamaBackend
+from llmbackends import OllamaBackend, OpenAIBackend
 from orchestrator import run_agent
 
 
 def build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="AI coding agent")
     parser.add_argument("prompt", help="User programming request")
-    parser.add_argument("--model", default="qwen2.5-coder:3b", help="Model name")
+    parser.add_argument("--backend", choices=["ollama", "openai"], default=None)
+    parser.add_argument("--model", default=None, help="Model name")
     parser.add_argument("--max-iterations", type=int, default=None)
     parser.add_argument("--timeout", type=int, default=None, help="Test run timeout in seconds")
     parser.add_argument("--keep-artifacts", action="store_true")
@@ -46,6 +47,8 @@ def main():
     args = parser.parse_args()
 
     config = AgentConfig.from_env()
+    if args.backend:
+        config.backend = args.backend
     if args.model:
         config.model = args.model
     if args.max_iterations:
@@ -65,7 +68,12 @@ def main():
     if args.docker_network_disabled is not None:
         config.docker_network_disabled = args.docker_network_disabled
 
-    backend = OllamaBackend(model_name=config.model)
+    if config.backend == "ollama":
+        backend = OllamaBackend(model_name=config.model)
+    elif config.backend == "openai":
+        backend = OpenAIBackend(model_name=config.model)
+    else:
+        raise ValueError(f"Unsupported backend: {config.backend}")
     report = run_agent(args.prompt, backend, config)
     
     _print_progress(report)

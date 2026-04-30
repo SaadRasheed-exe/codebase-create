@@ -2,7 +2,7 @@ import time
 from collections import Counter
 from config import AgentConfig
 from executor import TempWorkspace, run_pytest
-from llmbackends import OllamaBackend
+from llmbackends import OllamaBackend, OpenAIBackend
 from models import FinalReport, GeneratedArtifacts, IterationRecord, TestExecutionResult
 from prompts import SYSTEM_PROMPT, build_generation_prompt, build_repair_prompt
 from response_parser import ResponseParseError, parse_model_response
@@ -45,7 +45,7 @@ def _compute_temperature(attempt: int, records: list[IterationRecord], config: A
     return max(0.08, min(temp, 0.50))
 
 
-def run_agent(user_prompt: str, backend: OllamaBackend, config: AgentConfig) -> FinalReport:
+def run_agent(user_prompt: str, backend: OllamaBackend | OpenAIBackend, config: AgentConfig) -> FinalReport:
     records: list[IterationRecord] = []
     repeated_error_tracker: Counter[str] = Counter()
 
