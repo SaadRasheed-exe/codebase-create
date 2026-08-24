@@ -20,7 +20,7 @@ from dataclasses import dataclass
 from codebase_create.config import AgentConfig
 from codebase_create.executor import TempWorkspace
 from codebase_create.executor import run_pytest
-from codebase_create.models import ToolCall, ToolResult
+from codebase_create.models import TestExecutionResult, ToolCall, ToolResult
 from codebase_create.test_results import parse_test_result
 
 
@@ -113,6 +113,7 @@ class ToolDispatcher:
             "write_file": self._write_file,
             "read_file": self._read_file,
             "list_files": self._list_files,
+            "run_tests": self._run_tests,
         }
         if call.name not in handlers:
             available = ", ".join(sorted(spec.name for spec in TOOL_SPECS))
@@ -160,3 +161,46 @@ class ToolDispatcher:
         if not infos:
             return "(workspace is empty)"
         return "\n".join(f"{info.path} ({info.bytes} bytes)" for info in infos)
+
+    def _run_tests(self, args: dict) -> str:
+        junit = self._workspace.path / "results.xml"
+        completed = run_pytest(
+            work_dir=self._workspace.path,
+            junit_file=junit,
+            timeout_sec=self._config.test_timeout_sec,
+            config=self._config,
+        )
+        if completed is None:
+            result = parse_test_result("", "", junit, timed_out=True)
+        else:
+            result = parse_test_result(
+                completed.stdout,
+                completed.stderr,
+                junit,
+                timed_out=False,
+                exit_code=completed.returncode,
+            )
+        return format_test_observation(result)
+
+
+def format_test_observation(result: TestExecutionResult) -> str:
+    """Compact, token-budgeted summary of a pytest run for the model."""
+    if result.timed_out:
+        return "TIMEOUT: test execution exceeded the time limit."
+    if result.success:
+        return f"PASSED: {result.passed} test(s) passed."
+
+    lines = [
+        f"FAILED ({result.category}): "
+        f"{result.failed} failed, {result.errors} errors, {result.passed} passed"
+    ]
+    shown = result.failure_messages[:MAX_FAILURE_MESSAGES]
+    for i, message in enumerate(shown, start=1):
+        message = message.strip()
+        if len(message) > MAX_MESSAGE_CHARS:
+            message = message[:MAX_MESSAGE_CHARS] + "..."
+        lines.append(f"[{i}] {message}")
+    hidden = len(result.failure_messages) - len(shown)
+    if hidden > 0:
+        lines.append(f"... {hidden} more failure message(s) omitted")
+    return "\n".join(lines)
