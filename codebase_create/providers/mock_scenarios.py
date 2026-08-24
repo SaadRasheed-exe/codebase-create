@@ -136,4 +136,18 @@ SCENARIOS: dict[str, list[ScriptedTurn]] = {
         ScriptedTurn(tool_calls=[("run_tests", {})]),
         ScriptedTurn(text="Recovered after argument errors; all tests pass."),
     ],
+    "premature_finish": [
+        # Declares done before any verification; the loop's nudge should
+        # push it back on track and the run should still succeed.
+        ScriptedTurn(text="Done! The implementation is obviously correct."),
+        ScriptedTurn(
+            text="Right - nothing has been verified yet. Writing files now.",
+            tool_calls=[
+                ("write_file", {"path": "solution.py", "content": CORRECT_FACTORIAL}),
+                ("write_file", {"path": "test_solution.py", "content": FACTORIAL_TESTS}),
+            ],
+        ),
+        ScriptedTurn(tool_calls=[("run_tests", {})]),
+        ScriptedTurn(text="All tests pass after the reminder."),
+    ],
 }
