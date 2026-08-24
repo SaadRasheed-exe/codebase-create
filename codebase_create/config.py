@@ -18,6 +18,7 @@ class AgentConfig:
     # Agentic stack additions (providers/orchestrator):
     mock_scenario: str = "happy_path"
     max_tokens: int = 4096
+    max_turns: int = 12
 
     @classmethod
     def from_env(cls) -> "AgentConfig":
@@ -35,4 +36,5 @@ class AgentConfig:
             docker_cpus=float(os.getenv("AGENT_DOCKER_CPUS", "1.0")),
             mock_scenario=os.getenv("AGENT_MOCK_SCENARIO", "happy_path"),
             max_tokens=int(os.getenv("AGENT_MAX_TOKENS", "4096")),
+            max_turns=int(os.getenv("AGENT_MAX_TURNS", "12")),
         )
