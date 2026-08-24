@@ -122,7 +122,13 @@ class ToolDispatcher:
                 is_error=True,
             )
         try:
-            content = handlers[call.name](call.arguments)
+            outcome = handlers[call.name](call.arguments)
+            extra: dict = {}
+            if isinstance(outcome, tuple):
+                # handlers may return (content, {ToolResult field overrides})
+                content, extra = outcome
+            else:
+                content = outcome
         except Exception as ex:
             return ToolResult(
                 call_id=call.id,
@@ -130,7 +136,7 @@ class ToolDispatcher:
                 content=f"{type(ex).__name__}: {ex}",
                 is_error=True,
             )
-        return ToolResult(call_id=call.id, name=call.name, content=content)
+        return ToolResult(call_id=call.id, name=call.name, content=content, **extra)
 
     def _write_file(self, args: dict) -> str:
         path = _require_str(args, "path")
@@ -171,7 +177,10 @@ class ToolDispatcher:
                 timed_out=False,
                 exit_code=completed.returncode,
             )
-        return format_test_observation(result)
+        return (
+            format_test_observation(result),
+            {"success": result.success},
+        )
 
 
 def format_test_observation(result: TestExecutionResult) -> str:
