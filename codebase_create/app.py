@@ -1,0 +1,108 @@
+import json
+import argparse
+
+from codebase_create.config import AgentConfig
+from codebase_create.llmbackends import OllamaBackend, OpenAIBackend
+from codebase_create.orchestrator import run_agent
+
+
+def build_arg_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description="AI coding agent")
+    parser.add_argument("prompt", help="User programming request")
+    parser.add_argument("--backend", choices=["ollama", "openai"], default=None)
+    parser.add_argument("--model", default=None, help="Model name")
+    parser.add_argument("--max-iterations", type=int, default=None)
+    parser.add_argument("--timeout", type=int, default=None, help="Test run timeout in seconds")
+    parser.add_argument("--keep-artifacts", action="store_true")
+    parser.add_argument("--sandbox", choices=["subprocess", "docker"], default=None)
+    parser.add_argument("--docker-image", default=None)
+    parser.add_argument("--docker-memory", default=None, help="Docker memory limit, e.g. 512m")
+    parser.add_argument("--docker-cpus", type=float, default=None, help="Docker CPU limit, e.g. 1.0")
+    parser.add_argument("--docker-network-disabled", dest="docker_network_disabled", action="store_true")
+    parser.add_argument("--docker-network-enabled", dest="docker_network_disabled", action="store_false")
+    parser.set_defaults(docker_network_disabled=None)
+    parser.add_argument("--json", action="store_true", help="Print final report as JSON")
+    return parser
+
+
+def _print_progress(report) -> None:
+    for record in report.records:
+        execution = record.execution
+        if execution is None:
+            continue
+        print(
+            f"Attempt {record.attempt}: "
+            f"success={execution.success} "
+            f"passed={execution.passed} "
+            f"failed={execution.failed} "
+            f"errors={execution.errors} "
+            f"category={execution.category}"
+        )
+    print(f'Final result: success={report.success}')
+    if not report.success:
+        print(f"Failure reason: {report.failure_summary}")
+
+def main():
+    parser = build_arg_parser()
+    args = parser.parse_args()
+
+    config = AgentConfig.from_env()
+    if args.backend:
+        config.backend = args.backend
+    if args.model:
+        config.model = args.model
+    if args.max_iterations:
+        config.max_iterations = args.max_iterations
+    if args.timeout:
+        config.test_timeout_sec = args.timeout
+    if args.keep_artifacts:
+        config.keep_artifacts = True
+    if args.sandbox:
+        config.sandbox = args.sandbox
+    if args.docker_image:
+        config.docker_image = args.docker_image
+    if args.docker_memory:
+        config.docker_memory_limit = args.docker_memory
+    if args.docker_cpus is not None:
+        config.docker_cpus = args.docker_cpus
+    if args.docker_network_disabled is not None:
+        config.docker_network_disabled = args.docker_network_disabled
+
+    if config.backend == "ollama":
+        backend = OllamaBackend(model_name=config.model)
+    elif config.backend == "openai":
+        backend = OpenAIBackend(model_name=config.model)
+    else:
+        raise ValueError(f"Unsupported backend: {config.backend}")
+    report = run_agent(args.prompt, backend, config)
+    
+    _print_progress(report)
+    
+    if args.json:
+        payload = {
+            "success": report.success,
+            "attempts_used": report.attempts_used,
+            "max_iterations": report.max_iterations,
+            "failure_category": report.failure_category,
+            "failure_summary": report.failure_summary,
+        }
+        print(json.dumps(payload, indent=2))
+    
+    else:
+        print("-" * 60)
+        print(f"Success: {report.success}")
+        print(f"Attempts used: {report.attempts_used}/{report.max_iterations}")
+        print(f"Failure category: {report.failure_category}")
+        print(f"Summary: {report.failure_summary}")
+
+    if report.success:
+        print("Final implementation:\n################################################")
+        print(report.records[-1].artifacts.implementation_code)
+        print("################################################")
+        return 0
+
+    return 1
+    
+
+if __name__ == "__main__":
+    raise SystemExit(main())

@@ -1,4 +1,4 @@
-from models import IterationRecord
+from codebase_create.models import IterationRecord
 
 
 SYSTEM_PROMPT = """You are an expert Python developer.

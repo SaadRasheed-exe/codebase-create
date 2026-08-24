@@ -6,7 +6,7 @@ import re
 import docker
 from docker.errors import DockerException
 
-from config import AgentConfig
+from codebase_create.config import AgentConfig
 
 
 class DockerRunner:

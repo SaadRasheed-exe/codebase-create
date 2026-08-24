@@ -1,4 +1,4 @@
-from models import GeneratedArtifacts
+from codebase_create.models import GeneratedArtifacts
 
 
 class ResponseParseError(ValueError):

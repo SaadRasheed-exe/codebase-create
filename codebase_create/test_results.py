@@ -1,7 +1,7 @@
 import re
 import xml.etree.ElementTree as ET
 from pathlib import Path
-from models import TestExecutionResult
+from codebase_create.models import TestExecutionResult
 
 
 __test__ = False

@@ -24,14 +24,14 @@ The system addresses the challenge of bridging the gap between natural language 
 
 | File | Purpose |
 |------|---------|
-| `orchestrator.py` | Main loop: prompt → generate → test → iterate |
-| `llmbackends.py` | LLM client (Ollama) integration |
-| `prompts.py` | System prompt and generation/repair prompt templates |
-| `response_parser.py` | Extracts `## IMPLEMENTATION` and `## TESTS` sections |
-| `executor.py` | Temp workspace, pytest runner, output capture |
-| `test_results.py` | JUnit XML parsing, failure categorization |
-| `config.py` | Configuration: model, timeouts, iterations, temperature |
-| `models.py` | Data structures: `IterationRecord`, `FinalReport`, `TestExecutionResult` |
+| `codebase_create/orchestrator.py` | Main loop: prompt → generate → test → iterate |
+| `codebase_create/llmbackends.py` | LLM client (Ollama) integration |
+| `codebase_create/prompts.py` | System prompt and generation/repair prompt templates |
+| `codebase_create/response_parser.py` | Extracts `## IMPLEMENTATION` and `## TESTS` sections |
+| `codebase_create/executor.py` | Temp workspace, pytest runner, output capture |
+| `codebase_create/test_results.py` | JUnit XML parsing, failure categorization |
+| `codebase_create/config.py` | Configuration: model, timeouts, iterations, temperature |
+| `codebase_create/models.py` | Data structures: `IterationRecord`, `FinalReport`, `TestExecutionResult` |
 | `app.py` | Entry point, result printing |
 
 ## How It Works
@@ -230,7 +230,7 @@ Tests exceeded `test_timeout_sec`. Either:
 Model forgot `## IMPLEMENTATION` or `## TESTS` markers. Usually:
 - Happens early; temperature ramps up on retry
 - Try a different model or longer timeout for generation
-- Check system prompt in `prompts.py`
+ - Check system prompt in `codebase_create/prompts.py`
 
 ### "All 8 attempts failed"
 
