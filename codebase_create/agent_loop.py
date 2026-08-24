@@ -40,7 +40,25 @@ from codebase_create.models import (
 )
 from codebase_create.prompts import AGENT_SYSTEM_PROMPT
 from codebase_create.providers.base import Provider, ProviderError
-from codebase_create.tools import TOOL_SPECS, ToolDispatcher
+from codebase_create.tools import MAX_READ_CHARS, TOOL_SPECS, ToolDispatcher
+
+
+SNAPSHOT_MAX_CHARS = MAX_READ_CHARS
+
+
+def _snapshot_files(ws: TempWorkspace) -> dict[str, str]:
+    """Capture the final workspace contents for the report."""
+    files: dict[str, str] = {}
+    for info in ws.list_files():
+        try:
+            content = ws.read_file(info.path)
+        except Exception:
+            continue  # unreadable file: omit rather than fail the report
+        if len(content) > SNAPSHOT_MAX_CHARS:
+            hidden = len(content) - SNAPSHOT_MAX_CHARS
+            content = content[:SNAPSHOT_MAX_CHARS] + f"\n... [truncated {hidden} chars]"
+        files[info.path] = content
+    return files
 
 
 NUDGE_MESSAGE = (
@@ -113,6 +131,7 @@ def run_agent(
             turns=turns,
             total_input_tokens=sum(t.input_tokens for t in turns),
             total_output_tokens=sum(t.output_tokens for t in turns),
+            files=_snapshot_files(ws),
         )
         emit(RunFinished(success=finished.success, turns_used=finished.turns_used))
         if owns_workspace:

@@ -200,3 +200,7 @@ class AgentRunReport:
     turns: list[AgentTurn] = field(default_factory=list)
     total_input_tokens: int = 0
     total_output_tokens: int = 0
+    # Final workspace contents (workspace-relative path -> text), captured
+    # at termination; size-capped per file. Lets CLIs and JSON consumers
+    # see the produced code without touching the workspace itself.
+    files: dict[str, str] = field(default_factory=dict)
