@@ -1,108 +1,102 @@
-import json
-import argparse
+"""CLI entry point for the agentic coding assistant.
 
+One-shot:   python app.py "Build a palindrome checker."
+Offline:    python app.py "..." --backend mock --mock-scenario happy_path
+Interactive python app.py            (or --repl)
+"""
+
+import argparse
+import json
+import sys
+
+from codebase_create.agent_loop import run_agent
 from codebase_create.config import AgentConfig
-from codebase_create.llmbackends import OllamaBackend, OpenAIBackend
-from codebase_create.orchestrator import run_agent
+from codebase_create.providers import BACKENDS, build_provider
+from codebase_create.providers.base import ProviderError
+from codebase_create.ui import get_renderer
 
 
 def build_arg_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="AI coding agent")
-    parser.add_argument("prompt", help="User programming request")
-    parser.add_argument("--backend", choices=["ollama", "openai"], default=None)
-    parser.add_argument("--model", default=None, help="Model name")
-    parser.add_argument("--max-iterations", type=int, default=None)
-    parser.add_argument("--timeout", type=int, default=None, help="Test run timeout in seconds")
-    parser.add_argument("--keep-artifacts", action="store_true")
+    parser = argparse.ArgumentParser(
+        description=(
+            "AI coding agent: writes implementation and tests, runs them "
+            "in a sandbox, and iterates until green."
+        )
+    )
+    parser.add_argument(
+        "prompt", nargs="?", default=None,
+        help="Programming request; omit to enter interactive REPL mode",
+    )
+    parser.add_argument("--backend", choices=BACKENDS, default=None,
+                        help="LLM backend (default from AGENT_BACKEND env)")
+    parser.add_argument("--model", default=None, help="Model name for the backend")
+    parser.add_argument("--mock-scenario", default=None,
+                        help="Script replayed by --backend mock")
+    parser.add_argument("--max-turns", type=int, default=None,
+                        help="Model turn budget per request (default 12)")
+    parser.add_argument("--timeout", type=int, default=None,
+                        help="Per pytest-run timeout in seconds")
     parser.add_argument("--sandbox", choices=["subprocess", "docker"], default=None)
-    parser.add_argument("--docker-image", default=None)
-    parser.add_argument("--docker-memory", default=None, help="Docker memory limit, e.g. 512m")
-    parser.add_argument("--docker-cpus", type=float, default=None, help="Docker CPU limit, e.g. 1.0")
-    parser.add_argument("--docker-network-disabled", dest="docker_network_disabled", action="store_true")
-    parser.add_argument("--docker-network-enabled", dest="docker_network_disabled", action="store_false")
-    parser.set_defaults(docker_network_disabled=None)
-    parser.add_argument("--json", action="store_true", help="Print final report as JSON")
+    parser.add_argument("--keep-artifacts", action="store_true",
+                        help="Keep workspace directories after runs")
+    parser.add_argument("--ui", choices=["rich", "plain", "auto"], default="auto")
+    parser.add_argument("--json", action="store_true",
+                        help="Print machine-readable report JSON at the end")
+    parser.add_argument("--repl", action="store_true",
+                        help="Force interactive mode")
     return parser
 
 
-def _print_progress(report) -> None:
-    for record in report.records:
-        execution = record.execution
-        if execution is None:
-            continue
-        print(
-            f"Attempt {record.attempt}: "
-            f"success={execution.success} "
-            f"passed={execution.passed} "
-            f"failed={execution.failed} "
-            f"errors={execution.errors} "
-            f"category={execution.category}"
-        )
-    print(f'Final result: success={report.success}')
-    if not report.success:
-        print(f"Failure reason: {report.failure_summary}")
-
-def main():
-    parser = build_arg_parser()
-    args = parser.parse_args()
-
-    config = AgentConfig.from_env()
+def _apply_overrides(config: AgentConfig, args: argparse.Namespace) -> None:
     if args.backend:
         config.backend = args.backend
     if args.model:
         config.model = args.model
-    if args.max_iterations:
-        config.max_iterations = args.max_iterations
+    if args.mock_scenario:
+        config.mock_scenario = args.mock_scenario
+    if args.max_turns:
+        config.max_turns = args.max_turns
     if args.timeout:
         config.test_timeout_sec = args.timeout
-    if args.keep_artifacts:
-        config.keep_artifacts = True
     if args.sandbox:
         config.sandbox = args.sandbox
-    if args.docker_image:
-        config.docker_image = args.docker_image
-    if args.docker_memory:
-        config.docker_memory_limit = args.docker_memory
-    if args.docker_cpus is not None:
-        config.docker_cpus = args.docker_cpus
-    if args.docker_network_disabled is not None:
-        config.docker_network_disabled = args.docker_network_disabled
+    if args.keep_artifacts:
+        config.keep_artifacts = True
 
-    if config.backend == "ollama":
-        backend = OllamaBackend(model_name=config.model)
-    elif config.backend == "openai":
-        backend = OpenAIBackend(model_name=config.model)
-    else:
-        raise ValueError(f"Unsupported backend: {config.backend}")
-    report = run_agent(args.prompt, backend, config)
-    
-    _print_progress(report)
-    
+
+def main(argv: list[str] | None = None) -> int:
+    args = build_arg_parser().parse_args(argv)
+    config = AgentConfig.from_env()
+    _apply_overrides(config, args)
+    renderer = get_renderer(args.ui)
+
+    if args.repl or args.prompt is None:
+        from codebase_create.repl import run_repl  # deferred import
+        return run_repl(config, renderer)
+
+    try:
+        provider = build_provider(config)
+    except ProviderError as ex:
+        print(f"error: {ex}", file=sys.stderr)
+        return 2  # configuration problem, not a task failure
+
+    report = run_agent(args.prompt, provider, config, on_event=renderer.handle_event)
+    renderer.render_report(report)
+
     if args.json:
-        payload = {
+        print(json.dumps({
             "success": report.success,
-            "attempts_used": report.attempts_used,
-            "max_iterations": report.max_iterations,
+            "turns_used": report.turns_used,
+            "max_turns": report.max_turns,
             "failure_category": report.failure_category,
             "failure_summary": report.failure_summary,
-        }
-        print(json.dumps(payload, indent=2))
-    
-    else:
-        print("-" * 60)
-        print(f"Success: {report.success}")
-        print(f"Attempts used: {report.attempts_used}/{report.max_iterations}")
-        print(f"Failure category: {report.failure_category}")
-        print(f"Summary: {report.failure_summary}")
+            "total_input_tokens": report.total_input_tokens,
+            "total_output_tokens": report.total_output_tokens,
+            "files": report.files,
+        }, indent=2))
 
-    if report.success:
-        print("Final implementation:\n################################################")
-        print(report.records[-1].artifacts.implementation_code)
-        print("################################################")
-        return 0
+    return 0 if report.success else 1
 
-    return 1
-    
 
 if __name__ == "__main__":
     raise SystemExit(main())
