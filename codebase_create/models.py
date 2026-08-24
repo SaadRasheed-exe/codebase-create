@@ -56,3 +56,89 @@ class FinalReport:
     failure_category: FailureCategory
     failure_summary: str
     records: list[IterationRecord] = field(default_factory=list)
+
+
+# ---------------------------------------------------------------------------
+# Agentic building blocks (new architecture)
+#
+# These types are provider-neutral: every LLM backend normalizes its native
+# tool-calling format (Anthropic tool_use blocks, OpenAI tool_calls JSON
+# strings, ...) into ToolCall on the way in, and consumes ToolResult on the
+# way back. The orchestrator and UI never see provider-specific shapes.
+# ---------------------------------------------------------------------------
+
+
+@dataclass(slots=True)
+class ToolCall:
+    """A single tool invocation requested by the model."""
+
+    id: str
+    name: str
+    arguments: dict
+
+
+@dataclass(slots=True)
+class ToolResult:
+    """The observation produced by executing a ToolCall."""
+
+    call_id: str
+    name: str
+    content: str
+    is_error: bool = False
+
+
+@dataclass(slots=True)
+class AgentTurn:
+    """One round-trip with the model plus everything it triggered."""
+
+    index: int
+    assistant_text: str = ""
+    tool_calls: list[ToolCall] = field(default_factory=list)
+    tool_results: list[ToolResult] = field(default_factory=list)
+    input_tokens: int = 0
+    output_tokens: int = 0
+    duration_sec: float = 0.0
+
+
+@dataclass(slots=True)
+class FileInfo:
+    """A file inside the agent workspace (path is workspace-relative)."""
+
+    path: str
+    bytes: int
+
+
+# Events emitted by the orchestrator loop. Renderers subscribe to the same
+# stream via a callback; matching is done by type so new renderers can be
+# added without touching orchestration logic.
+
+
+@dataclass(slots=True)
+class TurnStarted:
+    turn_index: int
+
+
+@dataclass(slots=True)
+class AssistantReplied:
+    text: str
+
+
+@dataclass(slots=True)
+class ToolCalled:
+    record: ToolCall
+
+
+@dataclass(slots=True)
+class ObservationReady:
+    result: ToolResult
+
+
+@dataclass(slots=True)
+class RunFinished:
+    success: bool
+    turns_used: int
+
+
+AgentEvent = (
+    TurnStarted | AssistantReplied | ToolCalled | ObservationReady | RunFinished
+)
