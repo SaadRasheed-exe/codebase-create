@@ -73,8 +73,10 @@ def _failing_run_fingerprint(
         return None
     lines = last.content.splitlines()
     header = lines[0] if lines else ""
-    detail = next((line for line in lines if line.startswith("[1] ")), "")[:160]
-    return (header, detail)
+    # Failure bodies span many physical lines, so compare a flattened
+    # prefix rather than only the first line after the verdict header.
+    flat = " ".join(last.content.split())
+    return (header, flat[:200])
 
 
 def run_agent(
