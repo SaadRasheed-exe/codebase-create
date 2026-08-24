@@ -124,8 +124,10 @@ SCENARIOS: dict[str, list[ScriptedTurn]] = {
                 ("write_file", {"path": "../escape.py", "content": "x = 1"}),  # traversal
             ],
         ),
-        ScriptedTurn(text="Both calls were rejected. Let me correct the arguments."),
         ScriptedTurn(
+            # NOTE: text-only turns mean "done" to the orchestrator, so the
+            # apology rides along with the corrective calls instead.
+            text="Both calls were rejected. Retrying with correct arguments.",
             tool_calls=[
                 ("write_file", {"path": "solution.py", "content": CORRECT_FACTORIAL}),
                 ("write_file", {"path": "test_solution.py", "content": FACTORIAL_TESTS}),
