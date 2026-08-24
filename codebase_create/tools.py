@@ -20,22 +20,13 @@ from dataclasses import dataclass
 from codebase_create.config import AgentConfig
 from codebase_create.executor import TempWorkspace
 from codebase_create.executor import run_pytest
-from codebase_create.models import TestExecutionResult, ToolCall, ToolResult
+from codebase_create.models import TestExecutionResult, ToolCall, ToolResult, ToolSpec
 from codebase_create.test_results import parse_test_result
 
 
 MAX_READ_CHARS = 20_000
 MAX_FAILURE_MESSAGES = 8
 MAX_MESSAGE_CHARS = 600
-
-
-@dataclass(slots=True)
-class ToolSpec:
-    """A tool definition in provider-neutral form."""
-
-    name: str
-    description: str
-    parameters: dict
 
 
 TOOL_SPECS: list[ToolSpec] = [

@@ -4,7 +4,7 @@ import os
 
 @dataclass(slots=True)
 class AgentConfig:
-    backend: str = "openai"
+    backend: str = "openai"  # mock | anthropic | openai | ollama | nvidia
     model: str = "google/gemma-2-2b-it"
     test_timeout_sec: int = 15
     max_iterations: int = 8
@@ -15,6 +15,9 @@ class AgentConfig:
     docker_network_disabled: bool = True
     docker_memory_limit: str = "512m"
     docker_cpus: float = 1.0
+    # Agentic stack additions (providers/orchestrator):
+    mock_scenario: str = "happy_path"
+    max_tokens: int = 4096
 
     @classmethod
     def from_env(cls) -> "AgentConfig":
@@ -30,4 +33,6 @@ class AgentConfig:
             docker_network_disabled=os.getenv("AGENT_DOCKER_NETWORK_DISABLED", "true").lower() == "true",
             docker_memory_limit=os.getenv("AGENT_DOCKER_MEMORY", "512m"),
             docker_cpus=float(os.getenv("AGENT_DOCKER_CPUS", "1.0")),
+            mock_scenario=os.getenv("AGENT_MOCK_SCENARIO", "happy_path"),
+            max_tokens=int(os.getenv("AGENT_MAX_TOKENS", "4096")),
         )

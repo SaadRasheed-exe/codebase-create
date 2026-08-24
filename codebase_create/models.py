@@ -108,6 +108,15 @@ class FileInfo:
     bytes: int
 
 
+@dataclass(slots=True)
+class ToolSpec:
+    """A tool definition in provider-neutral JSON-Schema form."""
+
+    name: str
+    description: str
+    parameters: dict
+
+
 # Events emitted by the orchestrator loop. Renderers subscribe to the same
 # stream via a callback; matching is done by type so new renderers can be
 # added without touching orchestration logic.
