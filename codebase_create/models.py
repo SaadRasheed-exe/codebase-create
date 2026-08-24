@@ -142,3 +142,31 @@ class RunFinished:
 AgentEvent = (
     TurnStarted | AssistantReplied | ToolCalled | ObservationReady | RunFinished
 )
+
+
+# Conversation primitives. Providers accept these neutral shapes and
+# translate to their wire formats; complete() returns AssistantMessage,
+# which doubles as the history entry for the next request.
+
+
+@dataclass(slots=True)
+class UserMessage:
+    text: str
+
+
+@dataclass(slots=True)
+class AssistantMessage:
+    text: str = ""
+    tool_calls: list[ToolCall] = field(default_factory=list)
+    input_tokens: int = 0
+    output_tokens: int = 0
+
+
+@dataclass(slots=True)
+class ToolResultMessage:
+    """All observations from one assistant turn, batched together."""
+
+    results: list[ToolResult] = field(default_factory=list)
+
+
+ConversationMessage = UserMessage | AssistantMessage | ToolResultMessage
