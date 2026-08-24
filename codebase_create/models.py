@@ -13,6 +13,10 @@ FailureCategory = Literal[
     "infrastructure_error",
     "stuck_loop",
     "max_iterations_reached",
+    # agentic loop additions
+    "turn_budget_exhausted",
+    "provider_error",
+    "no_verified_solution",
 ]
 
 @dataclass(slots=True)
@@ -85,6 +89,9 @@ class ToolResult:
     name: str
     content: str
     is_error: bool = False
+    # Structured verdict for verification tools (set by run_tests);
+    # None for tools where success is not meaningful.
+    success: bool | None = None
 
 
 @dataclass(slots=True)
@@ -179,3 +186,17 @@ class ToolResultMessage:
 
 
 ConversationMessage = UserMessage | AssistantMessage | ToolResultMessage
+
+
+@dataclass(slots=True)
+class AgentRunReport:
+    """Outcome of one run_agent() invocation."""
+
+    success: bool
+    turns_used: int
+    max_turns: int
+    failure_category: FailureCategory
+    failure_summary: str
+    turns: list[AgentTurn] = field(default_factory=list)
+    total_input_tokens: int = 0
+    total_output_tokens: int = 0
