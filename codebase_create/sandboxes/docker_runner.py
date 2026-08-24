@@ -15,7 +15,15 @@ class DockerRunner:
         self._client = docker.from_env()
         self._resolved_image: str | None = None
 
-    def run(self, cmd: list[str], work_dir: Path, timeout_sec: int) -> subprocess.CompletedProcess[str] | None:
+    def run(
+        self,
+        cmd: list[str],
+        work_dir: Path,
+        timeout_sec: int,
+        env: dict[str, str] | None = None,
+    ) -> subprocess.CompletedProcess[str] | None:
+        # env is accepted for interface parity but intentionally ignored:
+        # containers must not inherit host environment (secrets, plugins).
         image = self._ensure_image()
 
         nano_cpus = int(self._config.docker_cpus * 1_000_000_000)

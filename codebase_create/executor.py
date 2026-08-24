@@ -1,4 +1,5 @@
 from pathlib import Path
+import os
 import tempfile
 import subprocess
 import shutil
@@ -105,4 +106,7 @@ def run_pytest(
         f"--junitxml={junit_file.name}",
     ]
     runner = get_sandbox_runner(config)
-    return runner.run(cmd=cmd, work_dir=work_dir, timeout_sec=timeout_sec)
+    # Spawned pytest must not load host-wide plugins (e.g. ROS 2 leaked via
+    # PYTHONPATH) and should not leave .pytest_cache in agent workspaces.
+    env = {**os.environ, "PYTEST_DISABLE_PLUGIN_AUTOLOAD": "1"}
+    return runner.run(cmd=cmd, work_dir=work_dir, timeout_sec=timeout_sec, env=env)
