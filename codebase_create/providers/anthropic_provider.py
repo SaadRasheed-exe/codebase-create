@@ -151,6 +151,31 @@ class AnthropicProvider(Provider):
             # thinking needs headroom above the budget
             kwargs["max_tokens"] = max(self._max_tokens, self._thinking_budget_tokens + 1024)
 
+        # --- streaming path ---
+        if on_delta is not None:
+            try:
+                with self._client.messages.stream(**kwargs) as stream:
+                    for event in stream:
+                        if event.type == "content_block_delta":
+                            delta = event.delta
+                            if delta.type == "thinking_delta":
+                                on_delta("thinking", delta.thinking)
+                            elif delta.type == "text_delta":
+                                on_delta("text", delta.text)
+                    response = stream.get_final_message()
+            except ProviderError:
+                raise
+            except Exception as ex:
+                raise ProviderError(f"Anthropic stream failed: {ex}") from ex
+
+            if getattr(response, "stop_reason", None) == "max_tokens":
+                raise ProviderError(
+                    "Anthropic response hit max_tokens before completing; "
+                    "raise AGENT_MAX_TOKENS."
+                )
+            return parse_anthropic_response(response)
+
+        # --- non-streaming path (unchanged) ---
         try:
             response = self._client.messages.create(**kwargs)
         except ProviderError:

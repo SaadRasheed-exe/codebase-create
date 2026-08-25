@@ -118,6 +118,29 @@ def parse_openai_response(response) -> AssistantMessage:
     )
 
 
+def _assemble_streaming_tool_calls(
+    raw_tool_calls: dict[int, dict],
+) -> list[ToolCall]:
+    """Assemble ToolCall objects from accumulated streaming fragments."""
+    calls = []
+    for index in sorted(raw_tool_calls):
+        data = raw_tool_calls[index]
+        raw_args = data.get("arguments", "")
+        try:
+            arguments = json.loads(raw_args) if raw_args else {}
+        except json.JSONDecodeError as ex:
+            raise ProviderError(
+                f"Model emitted malformed JSON arguments for "
+                f"'{data.get('name', '?')}': {ex}"
+            ) from ex
+        calls.append(ToolCall(
+            id=data.get("id", f"stream_{index}"),
+            name=data.get("name", "unknown"),
+            arguments=arguments,
+        ))
+    return calls
+
+
 def _validate_nvidia_model(client: OpenAI, model_name: str) -> None:
     """Ported from legacy llmbackends.OpenAIBackend init."""
     try:
@@ -174,6 +197,76 @@ class OpenAICompatProvider(Provider):
         if self._enable_thinking:
             kwargs["reasoning_effort"] = "medium"
 
+        # --- streaming path ---
+        if on_delta is not None:
+            kwargs["stream"] = True
+            kwargs["stream_options"] = {"include_usage": True}
+            try:
+                stream = self._client.chat.completions.create(**kwargs)
+            except ProviderError:
+                raise
+            except Exception as ex:
+                raise ProviderError(f"Chat completion stream failed: {ex}") from ex
+
+            # Accumulators
+            text_parts: list[str] = []
+            thinking_parts: list[str] = []
+            raw_tool_calls: dict[int, dict] = {}
+            input_tokens = output_tokens = thinking_tokens = 0
+
+            for chunk in stream:
+                # Usage arrives on the final chunk (choices=[])
+                if hasattr(chunk, "usage") and chunk.usage is not None:
+                    u = chunk.usage
+                    input_tokens = getattr(u, "prompt_tokens", 0) or 0
+                    output_tokens = getattr(u, "completion_tokens", 0) or 0
+                    details = getattr(u, "completion_tokens_details", None)
+                    if details:
+                        thinking_tokens = getattr(details, "reasoning_tokens", 0) or 0
+                        output_tokens -= thinking_tokens
+                    continue
+
+                if not chunk.choices:
+                    continue
+                delta = chunk.choices[0].delta
+
+                # Thinking/reasoning tokens (Ollama qwen3)
+                reasoning = getattr(delta, "reasoning", None)
+                if reasoning:
+                    thinking_parts.append(reasoning)
+                    on_delta("thinking", reasoning)
+
+                # Text content
+                content = getattr(delta, "content", None)
+                if content:
+                    text_parts.append(content)
+                    on_delta("text", content)
+
+                # Tool call assembly
+                for tc_delta in getattr(delta, "tool_calls", None) or []:
+                    idx = tc_delta.index
+                    if idx not in raw_tool_calls:
+                        raw_tool_calls[idx] = {"id": "", "name": "", "arguments": ""}
+                    entry = raw_tool_calls[idx]
+                    if tc_delta.id:
+                        entry["id"] = tc_delta.id
+                    func = getattr(tc_delta, "function", None)
+                    if func:
+                        if getattr(func, "name", None):
+                            entry["name"] = func.name
+                        if getattr(func, "arguments", None):
+                            entry["arguments"] += func.arguments
+
+            return AssistantMessage(
+                text="".join(text_parts),
+                thinking="".join(thinking_parts),
+                tool_calls=_assemble_streaming_tool_calls(raw_tool_calls),
+                input_tokens=input_tokens,
+                output_tokens=output_tokens,
+                thinking_tokens=thinking_tokens,
+            )
+
+        # --- non-streaming path (unchanged) ---
         try:
             response = self._client.chat.completions.create(**kwargs)
         except ProviderError:
