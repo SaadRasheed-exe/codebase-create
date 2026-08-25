@@ -11,7 +11,7 @@ from codebase_create.models import (
     ToolCall,
     ToolSpec,
 )
-from codebase_create.providers.base import Provider, ProviderError
+from codebase_create.providers.base import Provider, ProviderError, StreamCallback
 from codebase_create.providers.mock_scenarios import SCENARIOS, ScriptedTurn
 from codebase_create.tools import TOOL_SPECS
 
@@ -42,6 +42,7 @@ class MockProvider(Provider):
         messages: list[ConversationMessage],
         tools: list[ToolSpec],
         temperature: float = 0.1,
+        on_delta: StreamCallback | None = None,
     ) -> AssistantMessage:
         if self._cursor >= len(self._script):
             raise ProviderError(

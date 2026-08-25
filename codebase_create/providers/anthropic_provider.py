@@ -19,7 +19,7 @@ from codebase_create.models import (
     UserMessage,
     ToolResultMessage,
 )
-from codebase_create.providers.base import Provider, ProviderError
+from codebase_create.providers.base import Provider, ProviderError, StreamCallback
 
 
 def to_anthropic_messages(messages: list[ConversationMessage]) -> list[dict]:
@@ -132,6 +132,7 @@ class AnthropicProvider(Provider):
         messages: list[ConversationMessage],
         tools: list[ToolSpec],
         temperature: float = 0.1,
+        on_delta: StreamCallback | None = None,
     ) -> AssistantMessage:
         kwargs: dict = {
             "model": self._model_name,

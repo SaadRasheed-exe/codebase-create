@@ -14,12 +14,16 @@ orchestrator, never here.
 """
 
 from abc import ABC, abstractmethod
+from typing import Callable
 
 from codebase_create.models import (
     AssistantMessage,
     ConversationMessage,
     ToolSpec,
 )
+
+# (kind, delta_text) — kind is "thinking" or "text"
+StreamCallback = Callable[[str, str], None]
 
 
 class ProviderError(RuntimeError):
@@ -34,5 +38,13 @@ class Provider(ABC):
         messages: list[ConversationMessage],
         tools: list[ToolSpec],
         temperature: float = 0.1,
+        on_delta: StreamCallback | None = None,
     ) -> AssistantMessage:
-        """One request/response round trip with the model."""
+        """One request/response round trip with the model.
+
+        If *on_delta* is provided the provider calls it with incremental
+        updates as tokens arrive ("thinking" for reasoning traces, "text"
+        for the visible response).  The complete AssistantMessage is still
+        returned at the end.  Providers that don't support streaming
+        (mock, simple tests) ignore the callback.
+        """
