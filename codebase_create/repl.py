@@ -51,7 +51,7 @@ class ReplDriver:
                 try:
                     line = self._input_fn("agent> ")
                 except EOFError:
-                    self._output_fn()
+                    self._output_fn("")
                     break
                 except KeyboardInterrupt:
                     self._output_fn("^C")
