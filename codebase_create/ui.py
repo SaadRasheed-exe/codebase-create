@@ -3,10 +3,6 @@
 Renderers are pure consumers: they never touch the provider, the
 dispatcher, or the workspace. The same event stream that drives a Rich
 experience on an interactive terminal drives plain log lines in a pipe.
-
-No spinners here by design: wrapping provider.complete() from a
-callback means cross-callback status contexts, which are fragile.
-A Textual dashboard (future phase) owns live views properly.
 """
 
 import json
@@ -23,6 +19,8 @@ from codebase_create.models import (
     AgentRunReport,
     AssistantReplied,
     ObservationReady,
+    TextDelta,
+    ThinkingDelta,
     ToolCalled,
     TurnStarted,
 )
@@ -53,14 +51,24 @@ class PlainRenderer:
     def __init__(self, stdout=None, show_thinking: bool = False) -> None:
         self._out = stdout if stdout is not None else sys.stdout
         self._show_thinking = show_thinking
+        self._in_thinking = False
 
-    def _emit(self, text: str) -> None:
-        print(text, file=self._out)
+    def _emit(self, text: str, end: str = "\n") -> None:
+        print(text, end=end, file=self._out)
 
     def handle_event(self, event: AgentEvent) -> None:
         if isinstance(event, TurnStarted):
             self._emit(f"-- turn {event.turn_index} --")
+        elif isinstance(event, ThinkingDelta):
+            if self._show_thinking:
+                self._emit(event.text, end="")
+        elif isinstance(event, TextDelta):
+            self._emit(event.text, end="")
         elif isinstance(event, AssistantReplied):
+            # Close thinking block if streaming left it open
+            if self._in_thinking:
+                self._emit("")
+                self._in_thinking = False
             if event.thinking:
                 if self._show_thinking:
                     for line in event.thinking.splitlines() or [""]:
@@ -95,28 +103,54 @@ class PlainRenderer:
 
 
 class RichRenderer:
-    """Color-coded interactive experience."""
+    """Color-coded interactive experience with streaming thinking panel."""
 
     def __init__(self, console: Console | None = None, show_thinking: bool = False) -> None:
         self.console = console if console is not None else Console()
         self._show_thinking = show_thinking
+        self._in_thinking = False
+
+    def _close_thinking(self) -> None:
+        if self._in_thinking:
+            self.console.print("╰────────────────────────────╯", style="dim")
+            self._in_thinking = False
 
     def handle_event(self, event: AgentEvent) -> None:
         c = self.console
         if isinstance(event, TurnStarted):
+            self._close_thinking()
             c.rule(f"turn {event.turn_index}", style="dim")
+        elif isinstance(event, ThinkingDelta):
+            if self._show_thinking:
+                if not self._in_thinking:
+                    c.print("╭───────── thinking ─────────╮", style="dim")
+                    self._in_thinking = True
+                c.print(f"│ {event.text}", style="dim", end="")
+            else:
+                if not self._in_thinking:
+                    c.print(
+                        Text("[thinking hidden — use --thinking to show]", style="dim italic"),
+                        end="",
+                    )
+                    self._in_thinking = True  # suppress repeated hints
+        elif isinstance(event, TextDelta):
+            self._close_thinking()
+            c.print(event.text, end="")
         elif isinstance(event, AssistantReplied):
+            self._close_thinking()
             if event.thinking:
                 if self._show_thinking:
-                    c.print(Text(f"{event.thinking}", style="dim"))
+                    c.print(Text(event.thinking, style="dim"))
                 else:
                     c.print(Text("[thinking hidden — use --thinking to show]", style="dim italic"))
             if event.text.strip():
                 c.print(Text(event.text, style="italic dim"))
         elif isinstance(event, ToolCalled):
+            self._close_thinking()
             args = _preview_arguments(event.record.arguments)
             c.print(f"[cyan]> {event.record.name}[/cyan]({args})")
         elif isinstance(event, ObservationReady):
+            self._close_thinking()
             result = event.result
             lines = result.content.splitlines()
             if result.is_error:
@@ -128,6 +162,7 @@ class RichRenderer:
                 c.print(f"[{style}]{marker} {lines[0] if lines else ''}[/{style}]")
 
     def render_report(self, report: AgentRunReport) -> None:
+        self._close_thinking()
         c = self.console
         if report.success:
             headline = Text(
