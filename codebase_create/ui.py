@@ -10,6 +10,7 @@ import sys
 from typing import Protocol
 
 from rich.console import Console
+from rich.live import Live
 from rich.panel import Panel
 from rich.syntax import Syntax
 from rich.text import Text
@@ -109,10 +110,19 @@ class RichRenderer:
         self.console = console if console is not None else Console()
         self._show_thinking = show_thinking
         self._in_thinking = False
+        self._live: Live | None = None
+        self._thinking_text = ""
 
     def _close_thinking(self) -> None:
         if self._in_thinking:
-            self.console.print("╰────────────────────────────╯", style="dim")
+            if self._live is not None:
+                self._live.stop()
+                self._live = None
+            if self._show_thinking and self._thinking_text:
+                self.console.print(
+                    Panel(self._thinking_text, title="thinking", border_style="dim")
+                )
+            self._thinking_text = ""
             self._in_thinking = False
 
     def handle_event(self, event: AgentEvent) -> None:
@@ -123,9 +133,20 @@ class RichRenderer:
         elif isinstance(event, ThinkingDelta):
             if self._show_thinking:
                 if not self._in_thinking:
-                    c.print("╭───────── thinking ─────────╮", style="dim")
                     self._in_thinking = True
-                c.print(f"│ {event.text}", style="dim", end="")
+                    self._thinking_text = ""
+                    self._live = Live(
+                        Panel(self._thinking_text, title="thinking", border_style="dim"),
+                        console=c,
+                        auto_refresh=True,
+                        refresh_per_second=8,
+                    )
+                    self._live.start()
+                self._thinking_text += event.text
+                if self._live is not None:
+                    self._live.update(
+                        Panel(self._thinking_text, title="thinking", border_style="dim")
+                    )
             else:
                 if not self._in_thinking:
                     c.print(
