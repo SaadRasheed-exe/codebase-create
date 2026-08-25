@@ -120,18 +120,6 @@ def test_keep_artifacts_preserves_workspace():
     assert (path / "keep.txt").read_text(encoding="utf-8") == "data"
 
 
-def test_write_artifacts_legacy_shim():
-    ws = TempWorkspace()
-    try:
-        artifacts = ws.write_artifacts("impl = 1", "def test_x():\n    pass\n")
-        assert artifacts.work_dir == ws.path
-        assert artifacts.solution_file.read_text(encoding="utf-8") == "impl = 1"
-        assert artifacts.test_file.name == "test_solution.py"
-        assert artifacts.junit_file.name == "results.xml"
-    finally:
-        ws.cleanup()
-
-
 def test_files_are_utf8_on_disk():
     ws = TempWorkspace()
     try:

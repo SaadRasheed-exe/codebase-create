@@ -5,7 +5,7 @@ import subprocess
 import shutil
 
 from codebase_create.config import AgentConfig
-from codebase_create.models import ExecutionArtifacts, FileInfo
+from codebase_create.models import FileInfo
 from codebase_create.sandboxes import get_sandbox_runner
 
 
@@ -74,17 +74,6 @@ class TempWorkspace:
                 continue
             infos.append(FileInfo(path=rel, bytes=item.stat().st_size))
         return infos
-
-    def write_artifacts(self, implementation: str, tests: str) -> ExecutionArtifacts:
-        """Legacy two-file layout, kept until the agentic loop replaces it."""
-        solution_file = self.write_file("solution.py", implementation)
-        test_file = self.write_file("test_solution.py", tests)
-        return ExecutionArtifacts(
-            work_dir=self._tmp_dir,
-            solution_file=solution_file,
-            test_file=test_file,
-            junit_file=self._tmp_dir / "results.xml",
-        )
 
     def cleanup(self) -> None:
         if not self.keep_artifacts:
