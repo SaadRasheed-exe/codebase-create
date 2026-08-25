@@ -74,6 +74,7 @@ def anthropic_tools_from_specs(specs: list[ToolSpec]) -> list[dict]:
 
 def parse_anthropic_response(response) -> AssistantMessage:
     text_parts: list[str] = []
+    thinking_parts: list[str] = []
     calls: list[ToolCall] = []
     for block in response.content:
         if block.type == "text":
@@ -81,16 +82,27 @@ def parse_anthropic_response(response) -> AssistantMessage:
         elif block.type == "tool_use":
             calls.append(ToolCall(id=block.id, name=block.name, arguments=dict(block.input)))
         elif block.type == "thinking":
-            continue  # extended-thinking blocks are not part of the answer
+            thinking_parts.append(block.thinking)
+        elif block.type == "redacted_thinking":
+            pass  # skip redacted blocks silently
         else:
             raise ProviderError(f"Unexpected response block type: {block.type}")
 
     usage = getattr(response, "usage", None)
+    output_tokens = getattr(usage, "output_tokens", 0) or 0
+    thinking_tokens = 0
+    details = getattr(usage, "output_tokens_details", None)
+    if details:
+        thinking_tokens = getattr(details, "thinking_tokens", 0) or 0
+        output_tokens -= thinking_tokens
+
     return AssistantMessage(
         text="\n".join(text_parts),
+        thinking="\n".join(thinking_parts),
         tool_calls=calls,
         input_tokens=getattr(usage, "input_tokens", 0) or 0,
-        output_tokens=getattr(usage, "output_tokens", 0) or 0,
+        output_tokens=output_tokens,
+        thinking_tokens=thinking_tokens,
     )
 
 
@@ -100,11 +112,15 @@ class AnthropicProvider(Provider):
         model_name: str,
         api_key: str | None = None,
         max_tokens: int = 4096,
+        enable_thinking: bool = False,
+        thinking_budget_tokens: int = 10000,
     ) -> None:
         import anthropic  # deferred so offline/mock usage needs no SDK
 
         self._model_name = model_name
         self._max_tokens = max_tokens
+        self._enable_thinking = enable_thinking
+        self._thinking_budget_tokens = thinking_budget_tokens
         try:
             self._client = anthropic.Anthropic(api_key=api_key)
         except Exception as ex:
@@ -126,6 +142,13 @@ class AnthropicProvider(Provider):
         }
         if tools:
             kwargs["tools"] = anthropic_tools_from_specs(tools)
+        if self._enable_thinking:
+            kwargs["thinking"] = {
+                "type": "enabled",
+                "budget_tokens": self._thinking_budget_tokens,
+            }
+            # thinking needs headroom above the budget
+            kwargs["max_tokens"] = max(self._max_tokens, self._thinking_budget_tokens + 1024)
 
         try:
             response = self._client.messages.create(**kwargs)

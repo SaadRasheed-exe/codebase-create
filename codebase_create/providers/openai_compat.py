@@ -96,12 +96,25 @@ def parse_openai_response(response) -> AssistantMessage:
             ) from ex
         calls.append(ToolCall(id=tc.id, name=tc.function.name, arguments=arguments))
 
+    # Capture thinking/reasoning if present (Ollama qwen3 returns
+    # message.reasoning; OpenAI o-series hides it; NVIDIA ignores it).
+    thinking = getattr(raw_message, "reasoning", None) or ""
+
     usage = getattr(response, "usage", None)
+    output_tokens = getattr(usage, "completion_tokens", 0) or 0
+    thinking_tokens = 0
+    details = getattr(usage, "completion_tokens_details", None)
+    if details:
+        thinking_tokens = getattr(details, "reasoning_tokens", 0) or 0
+        output_tokens -= thinking_tokens
+
     return AssistantMessage(
         text=getattr(raw_message, "content", None) or "",
+        thinking=thinking,
         tool_calls=calls,
         input_tokens=getattr(usage, "prompt_tokens", 0) or 0,
-        output_tokens=getattr(usage, "completion_tokens", 0) or 0,
+        output_tokens=output_tokens,
+        thinking_tokens=thinking_tokens,
     )
 
 
@@ -135,8 +148,10 @@ class OpenAICompatProvider(Provider):
         base_url: str | None = None,
         api_key: str | None = None,
         validate_model=None,
+        enable_thinking: bool = False,
     ) -> None:
         self._model_name = model_name
+        self._enable_thinking = enable_thinking
         self._client = OpenAI(base_url=base_url, api_key=api_key)
         if validate_model is not None:
             validate_model(self._client, model_name)
@@ -155,6 +170,8 @@ class OpenAICompatProvider(Provider):
         }
         if tools:  # several strict endpoints reject an empty tools array
             kwargs["tools"] = openai_tools_from_specs(tools)
+        if self._enable_thinking:
+            kwargs["reasoning_effort"] = "medium"
 
         try:
             response = self._client.chat.completions.create(**kwargs)

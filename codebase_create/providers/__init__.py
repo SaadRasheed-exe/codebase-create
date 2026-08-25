@@ -33,7 +33,9 @@ def build_provider(config: AgentConfig) -> Provider:
                 "(set it in your environment or .env)."
             )
         return AnthropicProvider(
-            config.model, api_key=api_key, max_tokens=config.max_tokens
+            config.model, api_key=api_key, max_tokens=config.max_tokens,
+            enable_thinking=config.enable_thinking,
+            thinking_budget_tokens=config.thinking_budget_tokens,
         )
 
     if backend == "openai":
@@ -55,6 +57,7 @@ def build_provider(config: AgentConfig) -> Provider:
             base_url=os.getenv("OLLAMA_BASE_URL") or OLLAMA_BASE_URL,
             api_key="ollama",  # the local server does not check keys
             validate_model=_validate_ollama_model,
+            enable_thinking=config.enable_thinking,
         )
 
     if backend == "nvidia":
