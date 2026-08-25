@@ -54,4 +54,4 @@ class MockProvider(Provider):
             ToolCall(id=f"mock_{self._cursor}_{i}", name=name, arguments=dict(args))
             for i, (name, args) in enumerate(turn.tool_calls)
         ]
-        return AssistantMessage(text=turn.text, tool_calls=calls)
+        return AssistantMessage(text=turn.text, thinking=turn.thinking, tool_calls=calls)

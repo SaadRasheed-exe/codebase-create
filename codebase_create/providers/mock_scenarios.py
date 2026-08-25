@@ -64,6 +64,7 @@ def test_negative_raises():
 @dataclass(slots=True)
 class ScriptedTurn:
     text: str = ""
+    thinking: str = ""
     tool_calls: list[tuple[str, dict]] = field(default_factory=list)
 
 

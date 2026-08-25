@@ -76,10 +76,12 @@ class AgentTurn:
 
     index: int
     assistant_text: str = ""
+    thinking_text: str = ""
     tool_calls: list[ToolCall] = field(default_factory=list)
     tool_results: list[ToolResult] = field(default_factory=list)
     input_tokens: int = 0
     output_tokens: int = 0
+    thinking_tokens: int = 0
     duration_sec: float = 0.0
 
 
@@ -113,6 +115,7 @@ class TurnStarted:
 @dataclass(slots=True)
 class AssistantReplied:
     text: str
+    thinking: str = ""
 
 
 @dataclass(slots=True)
@@ -149,9 +152,11 @@ class UserMessage:
 @dataclass(slots=True)
 class AssistantMessage:
     text: str = ""
+    thinking: str = ""
     tool_calls: list[ToolCall] = field(default_factory=list)
     input_tokens: int = 0
     output_tokens: int = 0
+    thinking_tokens: int = 0
 
 
 @dataclass(slots=True)
@@ -176,6 +181,7 @@ class AgentRunReport:
     turns: list[AgentTurn] = field(default_factory=list)
     total_input_tokens: int = 0
     total_output_tokens: int = 0
+    total_thinking_tokens: int = 0
     # Final workspace contents (workspace-relative path -> text), captured
     # at termination; size-capped per file. Lets CLIs and JSON consumers
     # see the produced code without touching the workspace itself.

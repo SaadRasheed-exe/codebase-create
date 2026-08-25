@@ -18,6 +18,10 @@ class AgentConfig:
     mock_scenario: str = "happy_path"
     max_tokens: int = 4096
     max_turns: int = 12
+    # Thinking support:
+    show_thinking: bool = False
+    enable_thinking: bool = False
+    thinking_budget_tokens: int = 10000
 
     @classmethod
     def from_env(cls) -> "AgentConfig":
@@ -35,4 +39,7 @@ class AgentConfig:
             mock_scenario=os.getenv("AGENT_MOCK_SCENARIO", "happy_path"),
             max_tokens=int(os.getenv("AGENT_MAX_TOKENS", "4096")),
             max_turns=int(os.getenv("AGENT_MAX_TURNS", "12")),
+            show_thinking=os.getenv("AGENT_SHOW_THINKING", "false").lower() == "true",
+            enable_thinking=os.getenv("AGENT_ENABLE_THINKING", "false").lower() == "true",
+            thinking_budget_tokens=int(os.getenv("AGENT_THINKING_BUDGET_TOKENS", "10000")),
         )
