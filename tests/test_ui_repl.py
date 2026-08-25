@@ -233,6 +233,7 @@ def test_repl_keyboard_interrupt_at_prompt_continues(repl_outputs):
 def test_cli_one_shot_success_exit_code():
     code = app_main([
         "Build a factorial function.",
+        "--onetime",
         "--backend", "mock", "--sandbox", "subprocess",
         "--ui", "plain",
     ])
@@ -242,6 +243,7 @@ def test_cli_one_shot_success_exit_code():
 def test_cli_json_output_is_machine_readable(capsys):
     code = app_main([
         "Build a factorial function.",
+        "--onetime",
         "--backend", "mock", "--sandbox", "subprocess",
         "--ui", "plain", "--json",
     ])
@@ -254,5 +256,5 @@ def test_cli_json_output_is_machine_readable(capsys):
 
 def test_cli_configuration_error_exit_code_two(monkeypatch):
     monkeypatch.delenv("nvidia_api_key", raising=False)
-    code = app_main(["task", "--backend", "nvidia", "--ui", "plain"])
+    code = app_main(["task", "--onetime", "--backend", "nvidia", "--ui", "plain"])
     assert code == 2

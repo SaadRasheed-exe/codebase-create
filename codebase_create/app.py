@@ -1,8 +1,9 @@
 """CLI entry point for the agentic coding assistant.
 
-One-shot:   python app.py "Build a palindrome checker."
-Offline:    python app.py "..." --backend mock --mock-scenario happy_path
-Interactive python app.py            (or --repl)
+Default:     python app.py                  (interactive REPL)
+First task:  python app.py "Build factorial."
+One-shot:    python app.py --onetime "Build factorial."
+Offline:     python app.py --backend mock --mock-scenario happy_path
 """
 
 import argparse
@@ -29,7 +30,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "prompt", nargs="?", default=None,
-        help="Programming request; omit to enter interactive REPL mode",
+        help="Programming request; fed as first prompt in REPL mode",
     )
     parser.add_argument("--backend", choices=BACKENDS, default=None,
                         help="LLM backend (default from AGENT_BACKEND env)")
@@ -50,8 +51,8 @@ def build_arg_parser() -> argparse.ArgumentParser:
                         help="Show model reasoning traces (hidden by default)")
     parser.add_argument("--enable-thinking", action="store_true",
                         help="Request thinking from the model (Anthropic, Ollama)")
-    parser.add_argument("--repl", action="store_true",
-                        help="Force interactive mode")
+    parser.add_argument("--onetime", action="store_true",
+                        help="Run a single prompt and exit (no REPL)")
     return parser
 
 
@@ -82,33 +83,38 @@ def main(argv: list[str] | None = None) -> int:
     _apply_overrides(config, args)
     renderer = get_renderer(args.ui, show_thinking=config.show_thinking)
 
-    if args.repl or args.prompt is None:
-        from codebase_create.repl import run_repl  # deferred import
-        return run_repl(config, renderer)
+    # One-shot mode: run single prompt and exit
+    if args.onetime:
+        if not args.prompt:
+            print("error: --onetime requires a prompt", file=sys.stderr)
+            return 2
+        try:
+            provider = build_provider(config)
+        except ProviderError as ex:
+            print(f"error: {ex}", file=sys.stderr)
+            return 2
 
-    try:
-        provider = build_provider(config)
-    except ProviderError as ex:
-        print(f"error: {ex}", file=sys.stderr)
-        return 2  # configuration problem, not a task failure
+        report = run_agent(args.prompt, provider, config, on_event=renderer.handle_event)
+        renderer.render_report(report)
 
-    report = run_agent(args.prompt, provider, config, on_event=renderer.handle_event)
-    renderer.render_report(report)
+        if args.json:
+            print(json.dumps({
+                "success": report.success,
+                "turns_used": report.turns_used,
+                "max_turns": report.max_turns,
+                "failure_category": report.failure_category,
+                "failure_summary": report.failure_summary,
+                "total_input_tokens": report.total_input_tokens,
+                "total_output_tokens": report.total_output_tokens,
+                "total_thinking_tokens": report.total_thinking_tokens,
+                "files": report.files,
+            }, indent=2))
 
-    if args.json:
-        print(json.dumps({
-            "success": report.success,
-            "turns_used": report.turns_used,
-            "max_turns": report.max_turns,
-            "failure_category": report.failure_category,
-            "failure_summary": report.failure_summary,
-            "total_input_tokens": report.total_input_tokens,
-            "total_output_tokens": report.total_output_tokens,
-            "total_thinking_tokens": report.total_thinking_tokens,
-            "files": report.files,
-        }, indent=2))
+        return 0 if report.success else 1
 
-    return 0 if report.success else 1
+    # Default: REPL mode (with optional initial prompt)
+    from codebase_create.repl import run_repl  # deferred import
+    return run_repl(config, renderer, initial_prompt=args.prompt)
 
 
 if __name__ == "__main__":

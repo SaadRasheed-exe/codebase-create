@@ -47,10 +47,14 @@ class ReplDriver:
         self._output_fn = output_fn
         self._workspace: TempWorkspace | None = None
 
-    def run(self) -> int:
+    def run(self, initial_prompt: str | None = None) -> int:
         self._workspace = TempWorkspace(keep_artifacts=self._config.keep_artifacts)
         self._output_fn(BANNER)
         try:
+            # Process initial prompt if provided (from CLI args)
+            if initial_prompt:
+                self._run_request(initial_prompt)
+
             while True:
                 try:
                     line = self._input_fn("agent> ")
@@ -120,5 +124,5 @@ class ReplDriver:
         self._output_fn("(new workspace started)")
 
 
-def run_repl(config: AgentConfig, renderer: Renderer) -> int:
-    return ReplDriver(config, renderer).run()
+def run_repl(config: AgentConfig, renderer: Renderer, initial_prompt: str | None = None) -> int:
+    return ReplDriver(config, renderer).run(initial_prompt=initial_prompt)
