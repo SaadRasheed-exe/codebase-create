@@ -9,6 +9,10 @@ import argparse
 import json
 import sys
 
+from dotenv import load_dotenv
+
+load_dotenv()  # resolve .env before any config / provider reads env vars
+
 from codebase_create.agent_loop import run_agent
 from codebase_create.config import AgentConfig
 from codebase_create.providers import BACKENDS, build_provider

@@ -6,6 +6,10 @@ does NOT persist — memory lives in the files, not in chat context.
 That boundary keeps requests independent and token budgets small.
 """
 
+from dotenv import load_dotenv
+
+load_dotenv()  # standalone ReplDriver usage still picks up .env
+
 from codebase_create.agent_loop import run_agent
 from codebase_create.config import AgentConfig
 from codebase_create.executor import TempWorkspace
