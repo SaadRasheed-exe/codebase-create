@@ -94,6 +94,7 @@ python app.py "prompt" \
   --ui rich                    # rich | plain
   --json                       # machine-readable report
   --keep-artifacts             # preserve temp workspace
+  --no-stream                  # disable streaming output
   --repl                       # interactive mode (default when no prompt)
 ```
 

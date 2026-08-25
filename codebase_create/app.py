@@ -51,6 +51,8 @@ def build_arg_parser() -> argparse.ArgumentParser:
                         help="Show model reasoning traces (hidden by default)")
     parser.add_argument("--enable-thinking", action="store_true",
                         help="Request thinking from the model (Anthropic, Ollama)")
+    parser.add_argument("--no-stream", action="store_true",
+                        help="Disable streaming output")
     parser.add_argument("--onetime", action="store_true",
                         help="Run a single prompt and exit (no REPL)")
     return parser
@@ -75,6 +77,8 @@ def _apply_overrides(config: AgentConfig, args: argparse.Namespace) -> None:
         config.show_thinking = True
     if args.enable_thinking:
         config.enable_thinking = True
+    if args.no_stream:
+        config.stream_output = False
 
 
 def main(argv: list[str] | None = None) -> int:

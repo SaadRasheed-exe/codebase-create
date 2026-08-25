@@ -11,6 +11,8 @@ from codebase_create.models import (
     AssistantReplied,
     ObservationReady,
     RunFinished,
+    TextDelta,
+    ThinkingDelta,
     ToolCall,
     ToolCalled,
     ToolResult,
@@ -110,6 +112,50 @@ def test_rich_renderer_thinking_shown():
     renderer.handle_event(AssistantReplied(text="done", thinking="reasoning here"))
     text = console.export_text()
     assert "reasoning here" in text
+
+
+# ---------------------------------------------------------------------------
+# streaming display
+
+
+def test_plain_renderer_streams_thinking(capsys):
+    renderer = PlainRenderer(show_thinking=True)
+    renderer.handle_event(ThinkingDelta(text="step "))
+    renderer.handle_event(ThinkingDelta(text="one"))
+    renderer.handle_event(TextDelta(text="hello"))
+    out = capsys.readouterr().out
+    assert "step one" in out
+    assert "hello" in out
+
+
+def test_plain_renderer_streams_hidden_thinking(capsys):
+    renderer = PlainRenderer(show_thinking=False)
+    renderer.handle_event(ThinkingDelta(text="secret"))
+    renderer.handle_event(TextDelta(text="visible"))
+    out = capsys.readouterr().out
+    assert "secret" not in out
+    assert "visible" in out
+
+
+def test_rich_renderer_streams_thinking_in_panel():
+    console = Console(record=True, width=80, force_terminal=False)
+    renderer = RichRenderer(console, show_thinking=True)
+    renderer.handle_event(ThinkingDelta(text="reasoning"))
+    renderer.handle_event(TextDelta(text="answer"))
+    text = console.export_text()
+    assert "thinking" in text  # panel header
+    assert "reasoning" in text
+    assert "answer" in text
+
+
+def test_rich_renderer_streams_hidden_thinking():
+    console = Console(record=True, width=80, force_terminal=False)
+    renderer = RichRenderer(console, show_thinking=False)
+    renderer.handle_event(ThinkingDelta(text="secret"))
+    renderer.handle_event(TextDelta(text="visible"))
+    text = console.export_text()
+    assert "secret" not in text
+    assert "visible" in text
 
 
 def test_plain_report_summary_includes_files(capsys):
