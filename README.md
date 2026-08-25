@@ -95,6 +95,7 @@ python app.py "prompt" \
   --json                       # machine-readable report
   --keep-artifacts             # preserve temp workspace
   --no-stream                  # disable streaming output
+  --max-thinking-tokens 4000   # thinking budget per turn (default 4000)
   --repl                       # interactive mode (default when no prompt)
 ```
 

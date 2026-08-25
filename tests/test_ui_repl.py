@@ -19,6 +19,7 @@ from codebase_create.models import (
     TurnStarted,
 )
 from codebase_create.providers import build_provider
+from codebase_create.providers.mock_scenarios import ScriptedTurn
 from codebase_create.repl import ReplDriver
 from codebase_create.ui import PlainRenderer, RichRenderer, get_renderer
 
@@ -156,6 +157,46 @@ def test_rich_renderer_streams_hidden_thinking():
     text = console.export_text()
     assert "secret" not in text
     assert "visible" in text
+
+
+# ---------------------------------------------------------------------------
+# thinking budget enforcement
+
+
+def test_thinking_budget_stops_streaming(monkeypatch):
+    """When thinking exceeds max_thinking_tokens_per_turn, streaming stops."""
+    events: list = []
+
+    def collect(event):
+        events.append(event)
+
+    config = AgentConfig(
+        backend="mock", sandbox="subprocess",
+        max_thinking_tokens_per_turn=5,  # very small budget
+    )
+    # Use a provider that streams lots of thinking
+    from codebase_create.providers.mock import MockProvider
+    from codebase_create.providers.mock_scenarios import SCENARIOS
+
+    # Temporarily inject a scenario with lots of thinking
+    original = SCENARIOS.get("happy_path")
+    SCENARIOS["happy_path_thinking"] = [
+        ScriptedTurn(
+            text="done",
+            thinking="x" * 100,  # way over budget
+            tool_calls=[("run_tests", {})],
+        ),
+    ]
+    try:
+        config.mock_scenario = "happy_path_thinking"
+        provider = build_provider(config)
+        report = run_agent("task", provider, config, on_event=collect)
+        thinking_events = [e for e in events if isinstance(e, ThinkingDelta)]
+        # Should have stopped before emitting all 100 chars
+        total_thinking = sum(len(e.text) for e in thinking_events)
+        assert total_thinking <= 5 * 4 + 20  # some slack for last chunk
+    finally:
+        SCENARIOS.pop("happy_path_thinking", None)
 
 
 def test_plain_report_summary_includes_files(capsys):

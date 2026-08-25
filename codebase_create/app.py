@@ -53,6 +53,8 @@ def build_arg_parser() -> argparse.ArgumentParser:
                         help="Request thinking from the model (Anthropic, Ollama)")
     parser.add_argument("--no-stream", action="store_true",
                         help="Disable streaming output")
+    parser.add_argument("--max-thinking-tokens", type=int, default=0,
+                        help="Max thinking tokens per turn (default 4000)")
     parser.add_argument("--onetime", action="store_true",
                         help="Run a single prompt and exit (no REPL)")
     return parser
@@ -79,6 +81,8 @@ def _apply_overrides(config: AgentConfig, args: argparse.Namespace) -> None:
         config.enable_thinking = True
     if args.no_stream:
         config.stream_output = False
+    if args.max_thinking_tokens:
+        config.max_thinking_tokens_per_turn = args.max_thinking_tokens
 
 
 def main(argv: list[str] | None = None) -> int:
