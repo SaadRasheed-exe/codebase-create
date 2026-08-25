@@ -22,6 +22,8 @@ class AgentConfig:
     show_thinking: bool = False
     enable_thinking: bool = False
     thinking_budget_tokens: int = 10000
+    # Streaming:
+    stream_output: bool = True
 
     @classmethod
     def from_env(cls) -> "AgentConfig":
@@ -42,4 +44,5 @@ class AgentConfig:
             show_thinking=os.getenv("AGENT_SHOW_THINKING", "false").lower() == "true",
             enable_thinking=os.getenv("AGENT_ENABLE_THINKING", "false").lower() == "true",
             thinking_budget_tokens=int(os.getenv("AGENT_THINKING_BUDGET_TOKENS", "10000")),
+            stream_output=os.getenv("AGENT_STREAM_OUTPUT", "true").lower() == "true",
         )

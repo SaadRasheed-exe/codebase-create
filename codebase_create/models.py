@@ -134,8 +134,23 @@ class RunFinished:
     turns_used: int
 
 
+@dataclass(slots=True)
+class ThinkingDelta:
+    """Incremental thinking token during streaming."""
+
+    text: str
+
+
+@dataclass(slots=True)
+class TextDelta:
+    """Incremental text token during streaming."""
+
+    text: str
+
+
 AgentEvent = (
-    TurnStarted | AssistantReplied | ToolCalled | ObservationReady | RunFinished
+    TurnStarted | AssistantReplied | ToolCalled | ObservationReady
+    | RunFinished | ThinkingDelta | TextDelta
 )
 
 
