@@ -131,6 +131,7 @@ def run_agent(
             turns=turns,
             total_input_tokens=sum(t.input_tokens for t in turns),
             total_output_tokens=sum(t.output_tokens for t in turns),
+            total_thinking_tokens=sum(t.thinking_tokens for t in turns),
             files=_snapshot_files(ws),
         )
         emit(RunFinished(success=finished.success, turns_used=finished.turns_used))
@@ -152,8 +153,10 @@ def run_agent(
             turn = AgentTurn(
                 index=index,
                 assistant_text=reply.text,
+                thinking_text=reply.thinking,
                 input_tokens=reply.input_tokens,
                 output_tokens=reply.output_tokens,
+                thinking_tokens=reply.thinking_tokens,
             )
 
             # --- finish attempt: text-only turn -----------------------
@@ -169,8 +172,8 @@ def run_agent(
                 return report(False, "no_verified_solution", f"Unverified finish: {summary}")
 
             # --- execute the requested tools --------------------------
-            if reply.text:
-                emit(AssistantReplied(text=reply.text))
+            if reply.text or reply.thinking:
+                emit(AssistantReplied(text=reply.text, thinking=reply.thinking))
             results: list[ToolResult] = []
             for call in reply.tool_calls:
                 emit(ToolCalled(record=call))
