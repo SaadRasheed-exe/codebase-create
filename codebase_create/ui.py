@@ -50,8 +50,9 @@ class Renderer(Protocol):
 class PlainRenderer:
     """Log-style output safe for pipes, CI logs, and --json pairing."""
 
-    def __init__(self, stdout=None) -> None:
+    def __init__(self, stdout=None, show_thinking: bool = False) -> None:
         self._out = stdout if stdout is not None else sys.stdout
+        self._show_thinking = show_thinking
 
     def _emit(self, text: str) -> None:
         print(text, file=self._out)
@@ -60,6 +61,12 @@ class PlainRenderer:
         if isinstance(event, TurnStarted):
             self._emit(f"-- turn {event.turn_index} --")
         elif isinstance(event, AssistantReplied):
+            if event.thinking:
+                if self._show_thinking:
+                    for line in event.thinking.splitlines() or [""]:
+                        self._emit(f"# {line}")
+                else:
+                    self._emit("  [thinking hidden — use --thinking to show]")
             for line in event.text.splitlines() or [""]:
                 self._emit(f"  {line}")
         elif isinstance(event, ToolCalled):
@@ -90,14 +97,20 @@ class PlainRenderer:
 class RichRenderer:
     """Color-coded interactive experience."""
 
-    def __init__(self, console: Console | None = None) -> None:
+    def __init__(self, console: Console | None = None, show_thinking: bool = False) -> None:
         self.console = console if console is not None else Console()
+        self._show_thinking = show_thinking
 
     def handle_event(self, event: AgentEvent) -> None:
         c = self.console
         if isinstance(event, TurnStarted):
             c.rule(f"turn {event.turn_index}", style="dim")
         elif isinstance(event, AssistantReplied):
+            if event.thinking:
+                if self._show_thinking:
+                    c.print(Text(f"{event.thinking}", style="dim"))
+                else:
+                    c.print(Text("[thinking hidden — use --thinking to show]", style="dim italic"))
             if event.text.strip():
                 c.print(Text(event.text, style="italic dim"))
         elif isinstance(event, ToolCalled):
@@ -142,11 +155,11 @@ class RichRenderer:
                     c.print(content)
 
 
-def get_renderer(name: str) -> Renderer:
+def get_renderer(name: str, show_thinking: bool = False) -> Renderer:
     if name == "rich":
-        return RichRenderer()
+        return RichRenderer(show_thinking=show_thinking)
     if name == "plain":
-        return PlainRenderer()
+        return PlainRenderer(show_thinking=show_thinking)
     if name == "auto":
-        return RichRenderer() if sys.stdout.isatty() else PlainRenderer()
+        return RichRenderer(show_thinking=show_thinking) if sys.stdout.isatty() else PlainRenderer(show_thinking=show_thinking)
     raise ValueError(f"Unknown UI mode '{name}'. Valid: rich, plain, auto")
