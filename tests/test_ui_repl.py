@@ -73,6 +73,45 @@ def test_get_renderer_auto_and_validation(monkeypatch):
         get_renderer("curses")
 
 
+# ---------------------------------------------------------------------------
+# thinking display
+
+
+def test_plain_renderer_thinking_hidden(capsys):
+    renderer = PlainRenderer(show_thinking=False)
+    renderer.handle_event(AssistantReplied(text="done", thinking="step 1: think"))
+    out = capsys.readouterr().out
+    assert "[thinking hidden" in out
+    assert "step 1: think" not in out
+    assert "done" in out
+
+
+def test_plain_renderer_thinking_shown(capsys):
+    renderer = PlainRenderer(show_thinking=True)
+    renderer.handle_event(AssistantReplied(text="done", thinking="step 1: think"))
+    out = capsys.readouterr().out
+    assert "# step 1: think" in out
+    assert "done" in out
+    assert "[thinking hidden" not in out
+
+
+def test_rich_renderer_thinking_hidden():
+    console = Console(record=True, width=100, force_terminal=False)
+    renderer = RichRenderer(console, show_thinking=False)
+    renderer.handle_event(AssistantReplied(text="done", thinking="reasoning here"))
+    text = console.export_text()
+    assert "reasoning here" not in text
+    assert "[thinking hidden" in text
+
+
+def test_rich_renderer_thinking_shown():
+    console = Console(record=True, width=100, force_terminal=False)
+    renderer = RichRenderer(console, show_thinking=True)
+    renderer.handle_event(AssistantReplied(text="done", thinking="reasoning here"))
+    text = console.export_text()
+    assert "reasoning here" in text
+
+
 def test_plain_report_summary_includes_files(capsys):
     report = run_agent(
         "task",

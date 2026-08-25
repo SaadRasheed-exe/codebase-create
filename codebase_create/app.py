@@ -46,6 +46,10 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--ui", choices=["rich", "plain", "auto"], default="auto")
     parser.add_argument("--json", action="store_true",
                         help="Print machine-readable report JSON at the end")
+    parser.add_argument("--thinking", action="store_true",
+                        help="Show model reasoning traces (hidden by default)")
+    parser.add_argument("--enable-thinking", action="store_true",
+                        help="Request thinking from the model (Anthropic, Ollama)")
     parser.add_argument("--repl", action="store_true",
                         help="Force interactive mode")
     return parser
@@ -66,13 +70,17 @@ def _apply_overrides(config: AgentConfig, args: argparse.Namespace) -> None:
         config.sandbox = args.sandbox
     if args.keep_artifacts:
         config.keep_artifacts = True
+    if args.thinking:
+        config.show_thinking = True
+    if args.enable_thinking:
+        config.enable_thinking = True
 
 
 def main(argv: list[str] | None = None) -> int:
     args = build_arg_parser().parse_args(argv)
     config = AgentConfig.from_env()
     _apply_overrides(config, args)
-    renderer = get_renderer(args.ui)
+    renderer = get_renderer(args.ui, show_thinking=config.show_thinking)
 
     if args.repl or args.prompt is None:
         from codebase_create.repl import run_repl  # deferred import
@@ -96,6 +104,7 @@ def main(argv: list[str] | None = None) -> int:
             "failure_summary": report.failure_summary,
             "total_input_tokens": report.total_input_tokens,
             "total_output_tokens": report.total_output_tokens,
+            "total_thinking_tokens": report.total_thinking_tokens,
             "files": report.files,
         }, indent=2))
 

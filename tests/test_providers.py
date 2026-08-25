@@ -213,6 +213,40 @@ def test_parse_openai_rejects_malformed_arguments():
         parse_openai_response(fake)
 
 
+def test_parse_openai_captures_reasoning():
+    fake = NS(
+        choices=[NS(message=NS(
+            content="answer",
+            reasoning="step by step",
+            tool_calls=None,
+        ))],
+        usage=NS(prompt_tokens=50, completion_tokens=40),
+    )
+    msg = parse_openai_response(fake)
+    assert msg.thinking == "step by step"
+    assert msg.text == "answer"
+    assert msg.thinking_tokens == 0
+
+
+def test_parse_openai_subtracts_reasoning_tokens():
+    fake = NS(
+        choices=[NS(message=NS(
+            content="answer",
+            reasoning="thinking",
+            tool_calls=None,
+        ))],
+        usage=NS(
+            prompt_tokens=100,
+            completion_tokens=80,
+            completion_tokens_details=NS(reasoning_tokens=50),
+        ),
+    )
+    msg = parse_openai_response(fake)
+    assert msg.thinking == "thinking"
+    assert msg.output_tokens == 30  # 80 - 50
+    assert msg.thinking_tokens == 50
+
+
 # ---------------------------------------------------------------------------
 # Anthropic wire format conversions (pure, offline)
 # ---------------------------------------------------------------------------
@@ -258,8 +292,29 @@ def test_parse_anthropic_response_merges_text_and_calls():
     )
     msg = parse_anthropic_response(fake)
     assert msg.text == "line one\nline two"
+    assert msg.thinking == "hidden"
     assert msg.tool_calls == [ToolCall(id="tu_1", name="run_tests", arguments={})]
     assert (msg.input_tokens, msg.output_tokens) == (10, 20)
+    assert msg.thinking_tokens == 0
+
+
+def test_parse_anthropic_subtracts_thinking_tokens():
+    fake = NS(
+        content=[
+            NS(type="thinking", thinking="reasoning"),
+            NS(type="text", text="answer"),
+        ],
+        usage=NS(
+            input_tokens=100,
+            output_tokens=50,
+            output_tokens_details=NS(thinking_tokens=30),
+        ),
+    )
+    msg = parse_anthropic_response(fake)
+    assert msg.thinking == "reasoning"
+    assert msg.text == "answer"
+    assert msg.output_tokens == 20  # 50 - 30
+    assert msg.thinking_tokens == 30
 
 
 # ---------------------------------------------------------------------------

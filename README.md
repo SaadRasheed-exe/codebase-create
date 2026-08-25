@@ -164,6 +164,29 @@ python app.py "..." --sandbox docker --docker-memory 1g --docker-cpus 1.5
 
 > **Security note:** The Docker sandbox disables networking and enforces memory/CPU limits. For fully offline or daemon-less use, the `subprocess` sandbox is the default.
 
+### Model thinking (reasoning traces)
+
+Some models (Ollama qwen3, Anthropic Claude) can emit a reasoning trace alongside their response. This is hidden by default to keep output clean.
+
+```bash
+# Show thinking when the model produces it
+python app.py "Build factorial." --backend ollama --model qwen3:8b --thinking
+
+# Enable thinking request for Anthropic (opt-in via API)
+python app.py "Build factorial." --backend anthropic --enable-thinking --thinking
+```
+
+Provider behavior:
+
+| Provider | Thinking | How to view | Token accounting |
+|----------|----------|-------------|------------------|
+| Ollama (qwen3) | Auto-enabled | `--thinking` | Not separated by Ollama |
+| Anthropic | Opt-in (`--enable-thinking`) | `--thinking` | Subtracted from output tokens |
+| OpenAI (o-series) | Always-on, hidden | N/A (no content exposed) | Reported in JSON output |
+| NVIDIA | Not supported | — | — |
+
+When hidden, a `[thinking hidden — use --thinking to show]` hint appears in the output.
+
 ## Architecture
 
 ### Component map
