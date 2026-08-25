@@ -159,9 +159,11 @@ class AnthropicProvider(Provider):
                         if event.type == "content_block_delta":
                             delta = event.delta
                             if delta.type == "thinking_delta":
-                                on_delta("thinking", delta.thinking)
+                                if not on_delta("thinking", delta.thinking):
+                                    break
                             elif delta.type == "text_delta":
-                                on_delta("text", delta.text)
+                                if not on_delta("text", delta.text):
+                                    break
                     response = stream.get_final_message()
             except ProviderError:
                 raise

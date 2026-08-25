@@ -234,13 +234,15 @@ class OpenAICompatProvider(Provider):
                 reasoning = getattr(delta, "reasoning", None)
                 if reasoning:
                     thinking_parts.append(reasoning)
-                    on_delta("thinking", reasoning)
+                    if not on_delta("thinking", reasoning):
+                        break
 
                 # Text content
                 content = getattr(delta, "content", None)
                 if content:
                     text_parts.append(content)
-                    on_delta("text", content)
+                    if not on_delta("text", content):
+                        break
 
                 # Tool call assembly
                 for tc_delta in getattr(delta, "tool_calls", None) or []:

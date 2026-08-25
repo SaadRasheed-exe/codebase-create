@@ -117,17 +117,23 @@ def run_agent(
     ws = workspace or TempWorkspace(keep_artifacts=config.keep_artifacts)
     dispatcher = ToolDispatcher(ws, config)
 
-    def _stream_handler(kind: str, delta: str) -> None:
+    def _stream_handler(kind: str, delta: str) -> bool:
+        nonlocal _thinking_chars
         if kind == "thinking":
+            _thinking_chars += len(delta)
+            if _thinking_chars > config.max_thinking_tokens_per_turn * 4:
+                return False  # budget exceeded — tell provider to stop
             emit(ThinkingDelta(text=delta))
         elif kind == "text":
             emit(TextDelta(text=delta))
+        return True
 
     messages: list = [UserMessage(user_request)]
     turns: list[AgentTurn] = []
     nudges_used = 0
     streak_fingerprint: tuple[str, str] | None = None
     streak_length = 0
+    _thinking_chars = 0
 
     def report(success: bool, category: FailureCategory, summary: str) -> AgentRunReport:
         finished = AgentRunReport(
@@ -151,6 +157,7 @@ def run_agent(
         for index in range(1, config.max_turns + 1):
             emit(TurnStarted(turn_index=index))
             start = time.perf_counter()
+            _thinking_chars = 0
 
             reply = provider.complete(
                 system_prompt=AGENT_SYSTEM_PROMPT,

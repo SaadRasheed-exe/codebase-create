@@ -22,8 +22,9 @@ from codebase_create.models import (
     ToolSpec,
 )
 
-# (kind, delta_text) — kind is "thinking" or "text"
-StreamCallback = Callable[[str, str], None]
+# (kind, delta_text) — kind is "thinking" or "text".
+# Returns True to continue streaming, False to signal the provider to stop.
+StreamCallback = Callable[[str, str], bool]
 
 
 class ProviderError(RuntimeError):
