@@ -1,245 +1,249 @@
 # Codebase Create
 
-An intelligent Python code generation and refinement system powered by LLMs. This agent takes a natural language request, generates implementation and test code, executes tests, and iteratively refines the solution based on failures—all without human intervention.
-
-## Overview
-
-The system addresses the challenge of bridging the gap between natural language specifications and executable, tested Python code. By combining LLM generation with automated test execution and adaptive refinement, it achieves higher quality solutions than single-shot generation alone.
-
-### Key Features
-
-- **Iterative Refinement**: Up to N attempts to fix failing code, with each iteration learning from previous test failures
-- **Adaptive Temperature Strategy**: Dynamically adjusts LLM sampling temperature to balance precision and exploration across attempts
-- **Automated Testing**: Runs pytest with structured XML output parsing for clear failure diagnosis
-- **Pluggable Sandboxing**: Execute tests with local subprocesses or Docker containers
-- **Robust Parsing**: Handles malformed model outputs gracefully with fallback mechanisms
-- **Configurable Backends**: Built on Ollama for flexible model swapping
-- **Detailed Reporting**: Full execution trace including artifacts, timings, and failure categories
-
-## Architecture
-
-![System Architecture](imgs/System_Architecture.png)
-
-### Core Components
-
-| File | Purpose |
-|------|---------|
-| `codebase_create/orchestrator.py` | Main loop: prompt → generate → test → iterate |
-| `codebase_create/llmbackends.py` | LLM client (Ollama) integration |
-| `codebase_create/prompts.py` | System prompt and generation/repair prompt templates |
-| `codebase_create/response_parser.py` | Extracts `## IMPLEMENTATION` and `## TESTS` sections |
-| `codebase_create/executor.py` | Temp workspace, pytest runner, output capture |
-| `codebase_create/test_results.py` | JUnit XML parsing, failure categorization |
-| `codebase_create/config.py` | Configuration: model, timeouts, iterations, temperature |
-| `codebase_create/models.py` | Data structures: `IterationRecord`, `FinalReport`, `TestExecutionResult` |
-| `app.py` | Entry point, result printing |
+An LLM coding agent that turns a natural-language request into a working, tested Python project. It generates implementation and test files, runs them in a sandbox, reads the results, and iterates until all tests pass — fully autonomous.
 
 ## How It Works
 
-### Iteration Strategy
-
-1. **Attempt 1**: Full generation from natural language
-2. **Attempts 2+**: Repair prompt with previous code, test code, and failure messages
-3. **Convergence**: Success halts loop early; all N attempts exhaust on stubborn failures
-
-### Temperature Scheduling
-
-Temperature controls randomness in LLM sampling:
-
-- **Low (0.08)**: Precise, deterministic—best for initial generation and syntax recovery
-- **High (0.50)**: Exploratory, diverse—helps escape repeated failures
-
-The agent uses an **adaptive schedule**:
-
 ```
-Base Temperature = 0.1 + 0.06 × (attempt - 1)
-
-Category Adjustments:
-  - malformed_model_output or syntax_error  → subtract 0.08
-  - test_failure or runtime_error           → add 0.05
-  - timeout                                 → add 0.03
-
-Repetition Escape:
-  - If same failure type repeats 2× → add 0.10
-
-Final: clamp(temp, min=0.08, max=0.50)
+prompt ──► agent_loop.run_agent()
+              │
+              ├─ turn 1:  model writes files via tools
+              │           → run_tests() in sandbox
+              │           → observation fed back
+              ├─ turn N:  model reads failures, fixes code
+              └─ DONE:    all tests pass  →  run ends
+                           max_turns hit  →  failure summary
+                           model stuck    →  early termination
 ```
 
-This keeps early attempts precise while enabling exploration later.
+The agent loop is **provider-neutral**: every LLM backend (OpenAI, Anthropic, Ollama, NVIDIA, Mock) exposes the same `complete()` interface. Tools — `write_file`, `read_file`, `list_files`, `run_tests` — are defined as JSON schemas; the dispatcher executes them against a temporary workspace and returns observations the model can act on. An event stream (`TurnStarted`, `ToolCalled`, `ObservationReady`, …) drives both the Rich and plain-text renderers.
 
-### Failure Categories
+### Termination policy
 
-The system classifies failures to guide repair:
+The loop stops as soon as one of these fires:
 
-- `syntax_error`: Python syntax issues (recoverable by slowing temperature)
-- `runtime_error`: Missing imports, undefined names, etc.
-- `test_failure`: Logic errors (tests define expected behavior)
-- `timeout`: Infinite loop or very slow code (increase temperature for different strategy)
-- `malformed_model_output`: LLM forgot required `## IMPLEMENTATION` / `## TESTS` sections
-- `infrastructure_error`: File system, subprocess, or parsing errors
+| Condition | Meaning |
+|-----------|---------|
+| Model returns text with no tool calls | Task complete |
+| `run_tests` returns `success=True` | Tests pass — done |
+| Same observation hashes repeated 4× | Stuck loop — bail early |
+| `max_turns` reached | Budget exhausted — summary |
+| Provider or sandbox error | Infrastructure failure — report |
 
-## Usage
+A `nudge` (one-turn "try a different approach" prompt) is inserted on the third identical observation before the stuck-loop detector fires, giving the model one free shot at course correction.
 
-### Installation
+### Why fixed temperature
 
-Ensure Ollama is running locally with a code model:
+The legacy pipeline used adaptive temperature scheduling that added complexity without measurable benefit. The agent loop uses **fixed temperature 0.1** (configurable via `AGENT_GENERATION_TEMPERATURE`): low enough for precise tool arguments, high enough to break degenerate loops via the stuck-loop detector instead of thermal jitter.
 
-```bash
-ollama pull qwen2.5-coder:3b
-ollama serve
-```
-
-Install Python dependencies:
+## Installation
 
 ```bash
 pip install -r requirements.txt
 ```
 
-Optional (recommended) virtual environment setup:
+> **Python ≥ 3.10 required.** Uses `X | Y` union types and `dataclass(slots=True)`.
+
+The `docker` sandbox driver requires Docker. For offline or daemon-less use, the `subprocess` sandbox is the default.
+
+### Backends
+
+| Backend | Key env var(s) | Notes |
+|---------|----------------|-------|
+| `mock` | — (none) | Deterministic, offline; uses scenario presets |
+| `ollama` | `OLLAMA_BASE_URL` (default `http://localhost:11434/v1`) | Local models via OpenAI-compatible API |
+| `nvidia` | `nvidia_api_key` | NVIDIA-hosted endpoints; base URL auto-set |
+| `openai` | `OPENAI_API_KEY` | GPT-4o, GPT-4o-mini, etc. |
+| `anthropic` | `ANTHROPIC_API_KEY` | Claude 3.5 Sonnet, etc. |
+
+Set `AGENT_BACKEND` in your `.env` or environment. Copy `.env.example` to `.env` and fill in keys for the backends you use.
+
+### Mock scenarios
+
+Use `--mock-scenario` to exercise specific agent-loop behaviors offline:
+
+| Scenario | Behavior |
+|----------|----------|
+| `happy_path` | Writes two files, tests pass immediately |
+| `fix_after_failure` | First `run_tests` fails, second passes |
+| `stuck_loop` | Always returns the same broken observation |
+| `bad_tool_args` | Returns tool calls with wrong parameter names |
+| `premature_finish` | Claims success without calling `run_tests` |
+
+## Quickstart
 
 ```bash
-python -m venv .venv
-.venv\Scripts\activate
-pip install -r requirements.txt
+# Offline (mock backend — works instantly, no keys needed)
+python app.py "Build a factorial function."
+
+# With Ollama
+AGENT_BACKEND=ollama python app.py "Build a palindrome checker."
+
+# With NVIDIA
+AGENT_BACKEND=nvidia python app.py "Build a Fibonacci generator."
 ```
 
-### Running
+### CLI flags
 
 ```bash
-python app.py "Build a Python function that returns factorial of a number."
+python app.py "prompt" \
+  --backend mock               # override AGENT_BACKEND
+  --mock-scenario fix_after_failure
+  --sandbox subprocess         # subprocess | docker
+  --max-turns 20               # loop budget (default 12)
+  --ui rich                    # rich | plain
+  --json                       # machine-readable report
+  --keep-artifacts             # preserve temp workspace
+  --repl                       # interactive mode (default when no prompt)
 ```
 
-### Output Example
-
-```
-Attempt 1: success=False passed=0 failed=3 errors=0 category=test_failure
-Attempt 2: success=False passed=0 failed=2 errors=0 category=test_failure
-Attempt 3: success=True  passed=5 failed=0 errors=0 category=none
-
-Final implementation:
-################################################
-def factorial(n):
-    if n < 0:
-        raise ValueError("Factorial not defined for negative numbers")
-    if n == 0 or n == 1:
-        return 1
-    return n * factorial(n - 1)
-################################################
-```
-
-### Configuration
-
-Edit `config.py` or set environment variables:
-
-```python
-# config.py
-AgentConfig(
-    model="qwen2.5-coder:3b",           # Ollama model name
-    test_timeout_sec=15,                # Max time per pytest run
-    max_iterations=8,                   # Max repair attempts
-    keep_artifacts=False,               # Keep temp workspace files for debugging
-    generation_temperature=0.1,         # Initial temperature
-)
-```
-
-Environment variables:
+### JSON output
 
 ```bash
-export AGENT_MODEL="qwen2.5-coder:3b"
-export AGENT_TEST_TIMEOUT="15"
-export AGENT_MAX_ITERATIONS="8"
-export AGENT_KEEP_ARTIFACTS="false"
-export AGENT_GENERATION_TEMPERATURE="0.1"
-export AGENT_SANDBOX="docker"          # subprocess | docker
-export AGENT_DOCKER_IMAGE="python:3.11-slim"
-export AGENT_DOCKER_NETWORK_DISABLED="true"
-export AGENT_DOCKER_MEMORY="512m"
-export AGENT_DOCKER_CPUS="1.0"
+python app.py "Build a binary search." --json --backend mock --sandbox subprocess
 ```
 
-Docker mode examples:
+Produces a single JSON object with `success`, `failure_category`, `turns` (each with `tool_calls`, `tool_results`, `text`), `files` (workspace-relative path → content), and token counts. Pipe into `jq` for scripting.
+
+## REPL (interactive mode)
+
+Run without a prompt (or with `--repl`) to enter an interactive session:
 
 ```bash
-python app.py "Build a function..." --sandbox docker
-python app.py "Build a function..." --sandbox docker --docker-memory 1g --docker-cpus 1.5
+python app.py                # default backend is mock
+python app.py --backend ollama
 ```
 
-Note: If the configured Docker image does not include `pytest`, the runner automatically builds a derived image with `pytest` installed and then executes tests in that derived image.
+Commands:
 
-## Design Patterns & Decisions
+| Command | Effect |
+|---------|--------|
+| Any text | Send to the agent as a prompt |
+| `/files` | List current workspace files |
+| `/reset` | Discard workspace, start fresh |
+| `/help` | Show available commands |
+| `/exit`, `/quit`, `Ctrl-D` | Exit (exit code 0) |
 
-### Why Regenerate Tests Every Iteration?
+The REPL preserves workspace state across prompts. Run `/reset` between unrelated tasks.
 
-Tests are part of the solution spec. By regenerating them, the agent can:
-- Refine test coverage based on implementation constraints
-- Recover from overly strict or buggy test suites
-- Adapt to discovered edge cases
+## Configuration
 
-**Tradeoff**: Makes convergence less predictable but increases robustness to test mistakes.
+### Environment variables
 
-### Why Simple Regex Parsing, Not Complex XML?
+```bash
+AGENT_BACKEND=mock                   # mock | ollama | nvidia | openai | anthropic
+AGENT_MODEL=google/gemma-2-2b-it     # model name (ignored by mock)
+AGENT_TEST_TIMEOUT=15                # seconds per pytest run
+AGENT_GENERATION_TEMPERATURE=0.1     # model sampling temperature
+AGENT_SANDBOX=subprocess             # subprocess | docker
+AGENT_KEEP_ARTIFACTS=false           # keep temp workspace for debugging
+AGENT_MOCK_SCENARIO=happy_path       # mock scenario preset
+AGENT_MAX_TOKENS=4096                # response token cap
+AGENT_MAX_TURNS=12                   # agent loop budget
+AGENT_DOCKER_IMAGE=python:3.11-slim  # base image for docker sandbox
+AGENT_DOCKER_NETWORK_DISABLED=true   # isolate container networking
+AGENT_DOCKER_MEMORY=512m             # container memory limit
+AGENT_DOCKER_CPUS=1.0                # container CPU quota
 
-The JUnit XML parser in `test_results.py` uses basic `ElementTree` iteration:
-- Low dependency overhead
-- Easy to debug and extend
-- Works with minimal pytest output
-- Falls back to stdout/stderr if XML is incomplete
+# Provider keys
+nvidia_api_key=
+ANTHROPIC_API_KEY=
+OPENAI_API_KEY=
+OLLAMA_BASE_URL=http://localhost:11434/v1
+OPENAI_BASE_URL=                     # override for OpenAI-compatible endpoints
+```
 
-### Temperature vs. Determinism
+### Docker sandbox
 
-Fixed low temperature means:
-- **First try**: High quality formatting → fewer parse errors
-- **Retries**: Same distribution → repeated failures (the core issue this project diagnosed)
+When `AGENT_SANDBOX=docker`, tests run in an isolated container. If the configured image lacks `pytest`, a derived image is built automatically with it installed.
 
-Adaptive scheduling solves this by:
-- Keeping precision high when needed
-- Enabling exploration only after failures
-- Detecting stuck loops and forcing diversity
+```bash
+python app.py "..." --sandbox docker
+python app.py "..." --sandbox docker --docker-memory 1g --docker-cpus 1.5
+```
 
-[**Placeholder for temperature visualization**: A line graph showing temperature over 8 attempts under three scenarios: 1) immediate success, 2) gradual failure recovery, 3) stuck loop with escape.]
+> **Security note:** The Docker sandbox disables networking and enforces memory/CPU limits. For fully offline or daemon-less use, the `subprocess` sandbox is the default.
 
-## Limitations & Future Work
+## Architecture
 
-### Current Limitations
+### Component map
 
-1. **Both artifacts regenerated per attempt**: No mix-and-match (e.g., fixing code while keeping tests)
-2. **No memory across projects**: Each run starts fresh with no learned prompts or strategies
-3. **Single-file solutions only**: Complex multi-module code requires manual scaffolding
-4. **No prioritized failure messages**: Just takes first 10 lines of XML failures
+| Module | Role |
+|--------|------|
+| `agent_loop.py` | Core loop: calls provider, dispatches tools, emits events, enforces termination |
+| `providers/base.py` | `Provider` ABC and `ProviderError` |
+| `providers/mock.py` | Scenario-driven mock provider for offline testing |
+| `providers/mock_scenarios.py` | Scenario definitions (happy_path, fix_after_failure, …) |
+| `providers/openai_compat.py` | OpenAI, Ollama, NVIDIA via `openai` SDK |
+| `providers/anthropic_provider.py` | Anthropic Claude via `anthropic` SDK |
+| `tools.py` | Tool dispatcher: write_file, read_file, list_files, run_tests |
+| `executor.py` | Temporary workspace management and sandboxed pytest execution |
+| `sandboxes/` | Sandbox drivers: subprocess and Docker |
+| `test_results.py` | JUnit XML parsing and failure categorization |
+| `config.py` | `AgentConfig` dataclass, env-var resolution |
+| `models.py` | Shared vocabulary: `ToolCall`, `ToolResult`, `AgentTurn`, events, report |
+| `prompts.py` | System prompt for the agent loop |
+| `ui.py` | `RichRenderer` (interactive terminal) and `PlainRenderer` (scripting/JSON) |
+| `repl.py` | Interactive REPL with persistent workspace |
+| `app.py` | CLI entry point |
 
-### Potential Improvements
+### Event stream
 
-- [ ] **Selective repair**: Regenerate only implementation, keep working tests
-- [ ] **Prompt optimization**: Learn which prompt structures work best per model
-- [ ] **Multi-file support**: Generate interrelated modules with dependency resolution
-- [ ] **Failure prioritization**: Rank and summarize failures by severity
-- [ ] **Metrics dashboard**: Track success rates by request category and model
-- [ ] **Caching**: Store successful solutions keyed by request hash for instant retrieval
+Every agent-loop turn emits a sequence of event objects:
+
+```
+TurnStarted(i)
+  AssistantReplied(text)
+  ToolCalled(tool_call)
+    ObservationReady(tool_result)
+      ToolCalled(tool_call)
+        ObservationReady(tool_result)
+          …
+RunFinished(success, turns_used)
+```
+
+Both `RichRenderer` and `PlainRenderer` subscribe to this stream via a callback. Adding a new renderer (e.g., Textual, web UI) means writing a single class that handles these event types — no changes to the agent loop.
+
+### Why regenerate tests every iteration?
+
+Tests are part of the solution spec. By regenerating them alongside implementation, the agent can refine test coverage, recover from buggy test suites, and adapt to discovered edge cases. The tradeoff is less predictable convergence, but the stuck-loop detector catches degenerate cases early.
+
+## Testing
+
+```bash
+# Full suite (offline, deterministic, ~12s)
+python -m pytest -q
+```
+
+> **ROS 2 note:** If you have ROS 2 on your `PYTHONPATH` (e.g., Jazzy), `pytest.ini` already sets `addopts = -p no:ros2娃娃` to suppress leaked global plugins.
+
+### What the tests cover
+
+- **Models & config**: dataclass construction, env-var resolution, defaults
+- **Executor**: workspace creation, path-traversal guard, UTF-8 correctness, artifact cleanup
+- **Tools**: dispatcher routing, write/read/list/run_tests round-trip, path safety
+- **Providers**: mock scenarios (happy_path, stuck_loop, bad_tool_args, premature_finish), provider factory, error propagation, OpenAI-compat normalization
+- **Agent loop**: termination conditions (pass, stuck_loop, nudge, budget, provider_error), event emission, token accounting, workspace snapshot on report
+- **UI & REPL**: Rich/plain renderer output, REPL grammar (lifecycle, EOF, interrupt-at-prompt, unknown commands), CLI exit codes (0/1/2), `--json` output format
 
 ## Troubleshooting
 
-### "Execution timed out"
+| Symptom | Cause / Fix |
+|---------|-------------|
+| `DockerException: Error while fetching server API version` | No Docker daemon running. Use `--sandbox subprocess` or start Docker. |
+| `ValueError: No nvidia_api_key found` | Backend needs a key. Set it in `.env` or via the env var named in the error. |
+| Agent loops without progress | `stuck_loop` category in the report. Increase `AGENT_MAX_TURNS` or try a different model. |
+| Tests timeout | Increase `AGENT_TEST_TIMEOUT` (default 15s). If generated code has an infinite loop, the model needs a different approach. |
+| `AGENT_BACKEND=openai` fails silently | No `.env` file or key not set. Check `python -c "from dotenv import load_dotenv; load_dotenv(); import os; print(os.getenv('OPENAI_API_KEY'))"`. |
 
-Tests exceeded `test_timeout_sec`. Either:
-- Increase timeout in config
-- Request has infinite loop or very slow algorithm
-- Check generated code with `keep_artifacts=true`
+## Roadmap
 
-### "Model output missing required sections"
+- [ ] **Textual dashboard** — real-time terminal UI with turn history, file tree, and verdict badges
+- [ ] **Retry / exponential backoff** for provider 429/503 errors
+- [ ] **Streaming** — token-by-token display while the model generates
+- [ ] **Selective repair** — keep working tests, regenerate only the implementation
+- [ ] **Live smoke tests** — CI matrix against real backends (keys required)
 
-Model forgot `## IMPLEMENTATION` or `## TESTS` markers. Usually:
-- Happens early; temperature ramps up on retry
-- Try a different model or longer timeout for generation
- - Check system prompt in `codebase_create/prompts.py`
+## License
 
-### "All 8 attempts failed"
-
-Code quality challenge. Debug with:
-
-```bash
-# Keep artifacts to inspect generated files
-AGENT_KEEP_ARTIFACTS=true python app.py "..."
-# Then check /tmp/agent_run_* directories
-```
-
-Look for patterns in failure messages to guide manual fixes.
+MIT
