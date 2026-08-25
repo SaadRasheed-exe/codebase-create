@@ -5,25 +5,17 @@ from typing import Literal
 
 FailureCategory = Literal[
     "none",
-    "malformed_model_output",
     "syntax_error",
     "runtime_error",
     "test_failure",
     "timeout",
     "infrastructure_error",
     "stuck_loop",
-    "max_iterations_reached",
-    # agentic loop additions
     "turn_budget_exhausted",
     "provider_error",
     "no_verified_solution",
 ]
 
-@dataclass(slots=True)
-class GeneratedArtifacts:
-    implementation_code: str
-    tests_code: str
-    raw_response: str
 
 @dataclass(slots=True)
 class ExecutionArtifacts:
@@ -31,6 +23,7 @@ class ExecutionArtifacts:
     solution_file: Path
     test_file: Path
     junit_file: Path
+
 
 @dataclass(slots=True)
 class TestExecutionResult:
@@ -44,31 +37,14 @@ class TestExecutionResult:
     stderr: str
     category: FailureCategory
 
-@dataclass(slots=True)
-class IterationRecord:
-    attempt: int
-    artifacts: GeneratedArtifacts
-    execution: TestExecutionResult | None = None
-    duration_sec: float = 0.0
-    temperature: float = 0.0
-
-@dataclass(slots=True)
-class FinalReport:
-    success: bool
-    attempts_used: int
-    max_iterations: int
-    failure_category: FailureCategory
-    failure_summary: str
-    records: list[IterationRecord] = field(default_factory=list)
-
 
 # ---------------------------------------------------------------------------
-# Agentic building blocks (new architecture)
+# Agentic building blocks (tool-calling architecture)
 #
-# These types are provider-neutral: every LLM backend normalizes its native
+# Provider-neutral vocabulary: every LLM backend normalizes its native
 # tool-calling format (Anthropic tool_use blocks, OpenAI tool_calls JSON
 # strings, ...) into ToolCall on the way in, and consumes ToolResult on the
-# way back. The orchestrator and UI never see provider-specific shapes.
+# way back.  The agent loop and UI never see provider-specific shapes.
 # ---------------------------------------------------------------------------
 
 
@@ -124,7 +100,7 @@ class ToolSpec:
     parameters: dict
 
 
-# Events emitted by the orchestrator loop. Renderers subscribe to the same
+# Events emitted by the agent loop.  Renderers subscribe to the same
 # stream via a callback; matching is done by type so new renderers can be
 # added without touching orchestration logic.
 
