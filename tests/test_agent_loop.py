@@ -90,7 +90,7 @@ class AlternatingFailingProvider(Provider):
     def __init__(self) -> None:
         self.calls = 0
 
-    def complete(self, system_prompt, messages, tools, temperature=0.1):
+    def complete(self, system_prompt, messages, tools, temperature=0.1, on_delta=None):
         self.calls += 1
         return AssistantMessage(
             text=f"variant {self.calls}",

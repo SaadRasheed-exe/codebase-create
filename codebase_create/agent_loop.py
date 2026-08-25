@@ -31,6 +31,8 @@ from codebase_create.models import (
     FailureCategory,
     ObservationReady,
     RunFinished,
+    TextDelta,
+    ThinkingDelta,
     ToolCall,
     ToolCalled,
     ToolResult,
@@ -115,6 +117,12 @@ def run_agent(
     ws = workspace or TempWorkspace(keep_artifacts=config.keep_artifacts)
     dispatcher = ToolDispatcher(ws, config)
 
+    def _stream_handler(kind: str, delta: str) -> None:
+        if kind == "thinking":
+            emit(ThinkingDelta(text=delta))
+        elif kind == "text":
+            emit(TextDelta(text=delta))
+
     messages: list = [UserMessage(user_request)]
     turns: list[AgentTurn] = []
     nudges_used = 0
@@ -149,6 +157,7 @@ def run_agent(
                 messages=messages,
                 tools=TOOL_SPECS,
                 temperature=config.generation_temperature,
+                on_delta=_stream_handler if config.stream_output else None,
             )
             turn = AgentTurn(
                 index=index,
