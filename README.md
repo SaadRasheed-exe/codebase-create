@@ -189,6 +189,8 @@ Provider behavior:
 
 When hidden, a `[thinking hidden — use --thinking to show]` hint appears in the output.
 
+Thinking streamed per token is capped at `--max-thinking-tokens` (default 4000) per turn; when the budget cuts a reasoning trace short, an explicit `[thinking truncated — max N tokens/turn]` marker is left in place. The full thinking renders as scrollable terminal lines (bounded only by your scrollback buffer) — the live panel shows the last 10 lines while streaming.
+
 ## Architecture
 
 ### Component map

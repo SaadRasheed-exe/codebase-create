@@ -8,6 +8,7 @@ from codebase_create.app import main as app_main
 from codebase_create.config import AgentConfig
 from codebase_create.executor import TempWorkspace
 from codebase_create.models import (
+    AssistantMessage,
     AssistantReplied,
     ObservationReady,
     RunFinished,
@@ -19,7 +20,6 @@ from codebase_create.models import (
     TurnStarted,
 )
 from codebase_create.providers import build_provider
-from codebase_create.providers.mock_scenarios import ScriptedTurn
 from codebase_create.repl import ReplDriver
 from codebase_create.ui import PlainRenderer, RichRenderer, get_renderer
 
@@ -163,8 +163,9 @@ def test_rich_renderer_streams_hidden_thinking():
 # thinking budget enforcement
 
 
-def test_thinking_budget_stops_streaming(monkeypatch):
-    """When thinking exceeds max_thinking_tokens_per_turn, streaming stops."""
+def test_thinking_budget_stops_streaming():
+    """When streaming thinking exceeds the budget, the stream is cut and a
+    truncation marker is left in its place."""
     events: list = []
 
     def collect(event):
@@ -172,31 +173,104 @@ def test_thinking_budget_stops_streaming(monkeypatch):
 
     config = AgentConfig(
         backend="mock", sandbox="subprocess",
-        max_thinking_tokens_per_turn=5,  # very small budget
+        max_thinking_tokens_per_turn=5,  # 5 tokens -> 20 chars
     )
-    # Use a provider that streams lots of thinking
-    from codebase_create.providers.mock import MockProvider
-    from codebase_create.providers.mock_scenarios import SCENARIOS
 
-    # Temporarily inject a scenario with lots of thinking
-    original = SCENARIOS.get("happy_path")
-    SCENARIOS["happy_path_thinking"] = [
-        ScriptedTurn(
-            text="done",
-            thinking="x" * 100,  # way over budget
-            tool_calls=[("run_tests", {})],
-        ),
+    class StreamingThinkingProvider:
+        """Mimics a streaming provider honoring on_delta's return value.
+        Never terminates successfully: text-only reply ends the loop."""
+
+        def __init__(self):
+            self.calls = 0
+
+        def complete(self, system_prompt, messages, tools, temperature=0.1, on_delta=None):
+            self.calls += 1
+            if on_delta is not None:
+                for _ in range(200):
+                    if not on_delta("thinking", "x"):
+                        break
+            return AssistantMessage(text=f"done {self.calls}", thinking="x" * 200)
+
+    report = run_agent(
+        "task", StreamingThinkingProvider(), config, on_event=collect
+    )
+    # First call streams exactly the budgeted chars before the marker.
+    # Second call repeats (fresh budget per turn), then text-only ends it.
+    x_chars = sum(
+        len(e.text) for e in events
+        if isinstance(e, ThinkingDelta) and e.text == "x"
+    )
+    markers = [
+        e.text for e in events
+        if isinstance(e, ThinkingDelta) and "thinking truncated" in e.text
     ]
-    try:
-        config.mock_scenario = "happy_path_thinking"
-        provider = build_provider(config)
-        report = run_agent("task", provider, config, on_event=collect)
-        thinking_events = [e for e in events if isinstance(e, ThinkingDelta)]
-        # Should have stopped before emitting all 100 chars
-        total_thinking = sum(len(e.text) for e in thinking_events)
-        assert total_thinking <= 5 * 4 + 20  # some slack for last chunk
-    finally:
-        SCENARIOS.pop("happy_path_thinking", None)
+    assert x_chars == 2 * (5 * 4)
+    assert len(markers) == 2
+    assert "max 5 tokens/turn" in markers[0]
+    assert report.success is False
+
+
+def test_rich_renderer_long_thinking_not_clipped():
+    """Every thinking line lands in the output as plain scrollable text,
+    even when the total far exceeds one terminal screen."""
+    console = Console(record=True, width=60, force_terminal=False)
+    renderer = RichRenderer(console, show_thinking=True)
+    body = "\n".join(f"line {i:02d}" for i in range(60))  # ~60 lines
+    for chunk in body.split():
+        renderer.handle_event(ThinkingDelta(text=chunk + " "))
+    renderer.handle_event(TextDelta(text="answer"))
+    text = console.export_text()
+    for i in range(60):
+        assert f"line {i:02d}" in text
+    assert "thinking" in text  # rule header
+    assert "answer" in text
+
+
+def test_rich_thinking_not_duplicated():
+    """Streamed thinking printed once by _close_thinking is not repeated
+    by a subsequent AssistantReplied event."""
+    console = Console(record=True, width=80, force_terminal=False)
+    renderer = RichRenderer(console, show_thinking=True)
+    renderer.handle_event(ThinkingDelta(text="step one "))
+    renderer.handle_event(AssistantReplied(text="done", thinking="step one "))
+    text = console.export_text()
+    # The permanent scrollable block line is printed exactly once;
+    # AssistantReplied does not re-print it. (The transient Live panel
+    # render is preserved separately by the recording console.)
+    assert text.count("  step one") == 1
+    assert "done" in text
+
+
+def test_thinking_budget_emits_truncation_marker():
+    """The truncation marker text appears in the emitted event stream."""
+    events: list = []
+
+    def collect(event):
+        events.append(event)
+
+    config = AgentConfig(
+        backend="mock", sandbox="subprocess",
+        max_thinking_tokens_per_turn=2,  # 2 tokens -> 8 chars
+    )
+
+    class StreamingThinkingProvider:
+        def __init__(self):
+            self.calls = 0
+
+        def complete(self, system_prompt, messages, tools, temperature=0.1, on_delta=None):
+            self.calls += 1
+            if on_delta is not None:
+                for _ in range(100):
+                    if not on_delta("thinking", "x"):
+                        break
+            return AssistantMessage(text=f"done {self.calls}", thinking="x" * 100)
+
+    run_agent("task", StreamingThinkingProvider(), config, on_event=collect)
+    marker = next(
+        e.text for e in events
+        if isinstance(e, ThinkingDelta) and "thinking truncated" in e.text
+    )
+    assert "thinking truncated" in marker
 
 
 def test_plain_report_summary_includes_files(capsys):

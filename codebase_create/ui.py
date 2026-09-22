@@ -29,6 +29,7 @@ from codebase_create.models import (
 
 MAX_ARG_PREVIEW = 60
 ERROR_LINES_SHOWN = 6
+THINKING_LIVE_TAIL_LINES = 10
 
 
 def _preview_arguments(arguments: dict) -> str:
@@ -119,11 +120,39 @@ class RichRenderer:
                 self._live.stop()
                 self._live = None
             if self._show_thinking and self._thinking_text:
-                self.console.print(
-                    Panel(self._thinking_text, title="thinking", border_style="dim")
-                )
+                self._print_thinking_block(self._thinking_text)
             self._thinking_text = ""
             self._in_thinking = False
+
+    def _print_thinking_block(self, text: str) -> None:
+        """Print the full thinking as plain, scrollable lines.
+
+        A Rich Panel is rendered as a single compound shape that Rich
+        clips to the terminal height (the 'three dots' symptom).  Plain
+        text lines go into the terminal scrollback, so the whole
+        reasoning trace can be scrolled through.
+        """
+        c = self.console
+        c.rule("thinking", style="dim")
+        for line in text.splitlines() or [""]:
+            c.print(Text(f"  {line}", style="dim"))
+
+    def _live_panel(self) -> Panel:
+        """Live preview shows only the tail of thinking while streaming."""
+        lines = self._thinking_text.splitlines()
+        body = "\n".join(lines[-THINKING_LIVE_TAIL_LINES:]) if lines else ""
+        return Panel(body, title="thinking", border_style="dim")
+
+    def _start_live(self) -> None:
+        self._in_thinking = True
+        self._thinking_text = ""
+        self._live = Live(
+            self._live_panel(),
+            console=self.console,
+            auto_refresh=True,
+            refresh_per_second=8,
+        )
+        self._live.start()
 
     def handle_event(self, event: AgentEvent) -> None:
         c = self.console
@@ -133,20 +162,10 @@ class RichRenderer:
         elif isinstance(event, ThinkingDelta):
             if self._show_thinking:
                 if not self._in_thinking:
-                    self._in_thinking = True
-                    self._thinking_text = ""
-                    self._live = Live(
-                        Panel(self._thinking_text, title="thinking", border_style="dim"),
-                        console=c,
-                        auto_refresh=True,
-                        refresh_per_second=8,
-                    )
-                    self._live.start()
+                    self._start_live()
                 self._thinking_text += event.text
                 if self._live is not None:
-                    self._live.update(
-                        Panel(self._thinking_text, title="thinking", border_style="dim")
-                    )
+                    self._live.update(self._live_panel())
             else:
                 if not self._in_thinking:
                     c.print(
@@ -158,12 +177,15 @@ class RichRenderer:
             self._close_thinking()
             c.print(event.text, end="")
         elif isinstance(event, AssistantReplied):
+            already_shown = self._in_thinking
             self._close_thinking()
             if event.thinking:
                 if self._show_thinking:
-                    c.print(Text(event.thinking, style="dim"))
+                    if not already_shown:
+                        self._print_thinking_block(event.thinking)
                 else:
-                    c.print(Text("[thinking hidden — use --thinking to show]", style="dim italic"))
+                    if not already_shown:
+                        c.print(Text("[thinking hidden — use --thinking to show]", style="dim italic"))
             if event.text.strip():
                 c.print(Text(event.text, style="italic dim"))
         elif isinstance(event, ToolCalled):

@@ -122,7 +122,13 @@ def run_agent(
         if kind == "thinking":
             _thinking_chars += len(delta)
             if _thinking_chars > config.max_thinking_tokens_per_turn * 4:
-                return False  # budget exceeded — tell provider to stop
+                # Budget exceeded — stop the stream and leave a marker
+                # in place of the remaining reasoning.
+                emit(ThinkingDelta(
+                    text=f"\n[thinking truncated — max "
+                         f"{config.max_thinking_tokens_per_turn} tokens/turn]\n"
+                ))
+                return False
             emit(ThinkingDelta(text=delta))
         elif kind == "text":
             emit(TextDelta(text=delta))
