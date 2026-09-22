@@ -4,17 +4,7 @@ An LLM coding agent that turns a natural-language request into a working, tested
 
 ## How It Works
 
-```
-prompt ──► agent_loop.run_agent()
-              │
-              ├─ turn 1:  model writes files via tools
-              │           → run_tests() in sandbox
-              │           → observation fed back
-              ├─ turn N:  model reads failures, fixes code
-              └─ DONE:    all tests pass  →  run ends
-                           max_turns hit  →  failure summary
-                           model stuck    →  early termination
-```
+![How it works](imgs/HowItWorks.jpeg)
 
 The agent loop is **provider-neutral**: every LLM backend (OpenAI, Anthropic, Ollama, NVIDIA, Mock) exposes the same `complete()` interface. Tools — `write_file`, `read_file`, `list_files`, `run_tests` — are defined as JSON schemas; the dispatcher executes them against a temporary workspace and returns observations the model can act on. An event stream (`TurnStarted`, `ToolCalled`, `ObservationReady`, …) drives both the Rich and plain-text renderers.
 
@@ -195,39 +185,13 @@ Thinking streamed per token is capped at `--max-thinking-tokens` (default 4000) 
 
 ### Component map
 
-| Module | Role |
-|--------|------|
-| `agent_loop.py` | Core loop: calls provider, dispatches tools, emits events, enforces termination |
-| `providers/base.py` | `Provider` ABC and `ProviderError` |
-| `providers/mock.py` | Scenario-driven mock provider for offline testing |
-| `providers/mock_scenarios.py` | Scenario definitions (happy_path, fix_after_failure, …) |
-| `providers/openai_compat.py` | OpenAI, Ollama, NVIDIA via `openai` SDK |
-| `providers/anthropic_provider.py` | Anthropic Claude via `anthropic` SDK |
-| `tools.py` | Tool dispatcher: write_file, read_file, list_files, run_tests |
-| `executor.py` | Temporary workspace management and sandboxed pytest execution |
-| `sandboxes/` | Sandbox drivers: subprocess and Docker |
-| `test_results.py` | JUnit XML parsing and failure categorization |
-| `config.py` | `AgentConfig` dataclass, env-var resolution |
-| `models.py` | Shared vocabulary: `ToolCall`, `ToolResult`, `AgentTurn`, events, report |
-| `prompts.py` | System prompt for the agent loop |
-| `ui.py` | `RichRenderer` (interactive terminal) and `PlainRenderer` (scripting/JSON) |
-| `repl.py` | Interactive REPL with persistent workspace |
-| `app.py` | CLI entry point |
+![Component Map](imgs/ComponentMap.jpeg)
 
 ### Event stream
 
 Every agent-loop turn emits a sequence of event objects:
 
-```
-TurnStarted(i)
-  AssistantReplied(text)
-  ToolCalled(tool_call)
-    ObservationReady(tool_result)
-      ToolCalled(tool_call)
-        ObservationReady(tool_result)
-          …
-RunFinished(success, turns_used)
-```
+![Event Stream](imgs/EventStream.jpeg)
 
 Both `RichRenderer` and `PlainRenderer` subscribe to this stream via a callback. Adding a new renderer (e.g., Textual, web UI) means writing a single class that handles these event types — no changes to the agent loop.
 
